@@ -7,13 +7,6 @@ Copiar y pegar en un chat nuevo abierto en la raíz del repo:
 ```
 Arrancamos el Bloque 2. Leé ROADMAP.md primero para el estado y el criterio de salida.
 
-## Paso cero, antes de tocar nada
-
-Actualizá Claude Code. El entorno está en 2.1.138 y ADR-010 y ADR-011 se diseñaron
-contra documentación que describe comportamientos de subagentes y .mcp.json
-introducidos en versiones posteriores. Alinear ahora es barato; descubrir una
-incompatibilidad de frontmatter en el Bloque 4 no lo es.
-
 ## Las dos decisiones abiertas que este bloque tiene que cerrar
 
 1. En qué se escribe el servidor MCP. ADR-002 la dejó explícitamente abierta
@@ -72,5 +65,9 @@ está escrito en el propio ADR precisamente para poder tomarlo sin discutirlo.
 
 ## Entorno ya verificado, no lo redescubras
 
-.NET SDK 10.0.300 · Node v24.18.0 / npm 11.16.0 · claude en el PATH.
+.NET SDK 10.0.300 · Node v24.18.0 / npm 11.16.0 · Claude Code 2.1.224.
+
+Claude Code se actualizó a 2.1.224 el 07/08, de modo que el entorno ya está
+alineado con la documentación sobre la que se escribieron ADR-010 y ADR-011.
+Está instalado con WinGet (Anthropic.ClaudeCode), no con npm.
 ```
