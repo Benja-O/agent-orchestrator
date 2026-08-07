@@ -15,18 +15,20 @@
 
 ---
 
-## Estado (2026-08-07) — Bloque 0 en curso: andamiaje documental
+## Estado (2026-08-07) — Bloque 0 cerrado; próximo: Bloque 1
 
-Repo recién abierto. El briefing del desafío está en
-[orquestador-agentes-briefing.md](orquestador-agentes-briefing.md) y las nueve decisiones
-fundacionales ya están cerradas en `DECISIONS.md`. Todavía no hay una línea de código.
+Repo abierto y con el andamiaje documental completo. Las nueve decisiones fundacionales están
+cerradas en `DECISIONS.md`; el briefing original queda como registro de origen en
+[orquestador-agentes-briefing.md](orquestador-agentes-briefing.md). Todavía no hay una línea
+de código.
 
 **Plazo: vie 2026-08-07 → lun 2026-08-24 (17 días).** Es el condicionante que ordena todas
 las prioridades de abajo: hay tiempo para un pipeline que funcione de punta a punta sobre un
 artefacto chico, y no lo hay para nada más.
 
-**Lo próximo:** cerrar el Bloque 0 y arrancar el Bloque 1 (spec de juguete + contrato de
-tools MCP), que es lo que desbloquea todo el resto.
+**Lo próximo — Bloque 1.** Escribir `specs/gestor-tareas.md` y cerrar el contrato de tools del
+servidor MCP. Son las dos decisiones pendientes que bloquean todo el resto: sin el spec no hay
+qué analizar, y sin el contrato no hay gate que construir.
 
 ---
 
@@ -34,7 +36,7 @@ tools MCP), que es lo que desbloquea todo el resto.
 
 | Bloque | Fechas | Contenido | Criterio de salida | Estado |
 |---|---|---|---|---|
-| **0** | vie 07/08 | Andamiaje documental (`CLAUDE.md`, `AI.md`, `DECISIONS.md`, `ROADMAP.md`, README stub) + `git init` | Los cinco documentos existen, las referencias cruzadas resuelven, commit inicial hecho | 🔄 |
+| **0** | vie 07/08 | Andamiaje documental (`CLAUDE.md`, `AI.md`, `DECISIONS.md`, `ROADMAP.md`, README stub) + `git init` | Los cinco documentos existen, las referencias cruzadas resuelven, commit inicial hecho | ✅ 07/08 |
 | **1** | sáb 08 – lun 10/08 | `specs/gestor-tareas.md` + contrato de tools del servidor MCP | El spec está escrito en formato SDD y el contrato de tools tiene firmas y formato de `Diagnostic` cerrados, con su ADR | ⬜ |
 | **2** | mar 11 – vie 14/08 | Servidor MCP de LSP sobre Roslyn LSP + `typescript-language-server` | Una consulta manual al servidor devuelve diagnostics reales de un `.cs` roto a propósito, **y** una consulta de `definition` devuelve la ubicación correcta. ADR-006 pasa a `Aceptada` o se revierte a OmniSharp | ⬜ |
 | **3** | mié 12 – dom 16/08 | Esqueleto del grafo (estado, nodos, transiciones) + Spec Analyzer | El grafo corre end-to-end contra `FakeAgentRunner` y `FakeLanguageServer`, incluido el ciclo de revisión y las tres vías de terminación. La suite corre sin `claude` en el `PATH` | ⬜ |
@@ -152,4 +154,29 @@ retomar si el proyecto continuara.
 
 ## Historial completado
 
-*(vacío — se puebla al cerrar el primer bloque)*
+### ✅ Bloque 0 — Andamiaje documental (2026-08-07)
+
+Cinco documentos y el repo git, antes de escribir código. La razón de invertir el primer día
+acá: en este proyecto el registro de decisiones **es parte del entregable evaluado**, no
+documentación de apoyo.
+
+- **`DECISIONS.md`** — ADR-001..009, las decisiones que ya venían tomadas del briefing. Se
+  declaró en el encabezado la excepción a la regla de casa de "no hay ADR sin código
+  asociado", con sus tres razones. ADR-006 quedó en `Propuesta`, no `Aceptada`: la
+  superioridad de Roslyn LSP sobre OmniSharp es conocimiento del ecosistema, no algo
+  verificado en este proyecto.
+- **`AI.md`** — arquitectura objetivo y cuatro reglas de oro, cada una con su forma de
+  verificarse. Explícitamente marcado como contrato a cumplir, no descripción de algo
+  existente; se revisa al cierre del Bloque 3.
+- **`CLAUDE.md`** — comportamiento, control de costo, y la distinción entre este archivo y la
+  plantilla `templates/generated-app-CLAUDE.md` que el orquestador inyecta en el workspace
+  generado. Son dos cosas distintas con el mismo nombre y confundirlas es un error
+  conceptual.
+- **`ROADMAP.md`** — siete bloques fechados con criterio de salida verificable, las cinco
+  decisiones pendientes del briefing, cuatro riesgos y cuatro deudas.
+- **`README.md`** — stub. Se completa en el Bloque 6, cuando haya arquitectura real.
+
+Verificación hecha: los ADR citados desde otros documentos resuelven contra `DECISIONS.md`
+(ADR-010..014 aparecen solo como referencias hacia adelante en la tabla de decisiones
+pendientes); los cinco puntos abiertos del briefing están en este archivo y en ninguno de los
+otros; `git status` limpio.
