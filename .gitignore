@@ -1,0 +1,37 @@
+# --- Salida del orquestador ---
+# La app generada. Desechable por construcción: se borra y regenera de cero
+# en cada corrida (ADR-008). Nunca se versiona desde este repo.
+output/
+
+# Log estructurado JSONL de las corridas.
+logs/
+
+# --- .NET ---
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+*.user
+*.suo
+*.userprefs
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# --- IDE ---
+.vs/
+.vscode/
+.idea/
+*.swp
+
+# --- Node (lado React de la app generada, por si algo queda fuera de output/) ---
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# --- Sistema operativo ---
+Thumbs.db
+Desktop.ini
+.DS_Store
