@@ -30,6 +30,9 @@
 
 | ADR | Título corto | Área | Estado |
 |---|---|---|---|
+| ADR-012 | Formato del spec SDD: markdown humano con identificadores estables | Spec / Entrada | Aceptada |
+| ADR-011 | Scope de los subagentes de capa: tools, modelo, límites y alcance de archivos | Agentes / Costo | **Propuesta** |
+| ADR-010 | Contrato del servidor MCP de LSP: tools, transporte HTTP y formato de `Diagnostic` | LSP / Integración | **Propuesta** |
 | ADR-009 | Artefacto de juguete: gestor de tareas con dependencias, no un CRUD vacío | Alcance / Validación | Aceptada |
 | ADR-008 | Dos repos separados: el orquestador y la app que genera | Entrega / Repositorio | Aceptada |
 | ADR-007 | El spec entra por argumento de CLI; sin UI ni persistencia | Interfaz / Alcance | Aceptada |
@@ -41,6 +44,116 @@
 | ADR-001 | Claude Code CLI headless (`claude -p`), no la API de Anthropic | Agentes / Costo | Aceptada |
 
 ---
+
+## ADR-012 — Formato del spec SDD: markdown humano con identificadores estables
+**Fecha:** 2026-08-07
+**Estado:** Aceptada
+**ADRs relacionados:** ADR-009 (qué describe el spec), ADR-007 (cómo entra al orquestador).
+
+### Contexto
+El Spec Analyzer parsea un documento de entrada. La forma de ese documento decide qué clase de nodo es: si el spec ya viene estructurado campo por campo, "analizarlo" es deserializarlo.
+
+Hay una tensión real entre dos requisitos que tiran en direcciones opuestas:
+
+- **SDD parte de que el spec es un documento humano.** Es el artefacto que una persona escribe y discute; convertirlo en un archivo de configuración traiciona la premisa.
+- **El pipeline tiene que ser verificable.** Si el spec es prosa libre, no hay forma de comprobar que la app generada implementó lo que pedía — solo que compiló. Y compilar es lo que ya verifica el gate de LSP (ADR-004).
+
+### Decisión
+**Markdown humano, con identificadores estables como única convención mecánica.** Las reglas de negocio se numeran `RN-nn`, los criterios de aceptación `CA-nn`, y cada criterio cita la regla que verifica.
+
+El spec resultante se lee como prosa —secciones de propósito, actores, modelo conceptual, reglas, criterios, restricciones, fuera de alcance— y a la vez expone una estructura que un regex puede validar. El spec de este proyecto está en [specs/gestor-tareas.md](specs/gestor-tareas.md).
+
+Los identificadores son lo que hace **trazable** el pipeline: el plan de tareas cita el `RN-nn` que implementa, el log muestra qué regla se está trabajando en qué capa, y la verificación final se corre contra la lista de `CA-nn`. Sin ellos, "el pipeline funcionó" no es una afirmación comprobable.
+
+### Alternativas
+- **YAML o JSON estructurado** → descartado. Da parseo determinista y cero ambigüedad, pero degrada el Spec Analyzer a un deserializador: el nodo más visible del grafo dejaría de hacer trabajo interesante justo donde se lo mira. Y contradice la premisa de SDD.
+- **Markdown libre, sin convenciones** → descartado. Es el más fiel a la filosofía y el menos verificable: no hay forma de comprobar que una regla se implementó, ni de recortar el plan contra el spec. Deja al proyecto sin criterio de éxito.
+- **Dos archivos, uno humano y otro derivado y estructurado** → descartado por ahora: introduce un paso de sincronización que puede desincronizarse, para un spec de una página.
+
+### Consecuencias
+- **El spec tiene una invariante propia, comprobable:** los identificadores son únicos y correlativos, y **todo `CA-nn` cita al menos un `RN-nn` que existe**. Se puede verificar con un grep hoy y con un test en el Bloque 3. Un spec internamente inconsistente es un input roto que ensucia todo lo que viene después.
+- **El Spec Analyzer sigue siendo un nodo LLM real:** su trabajo es descomponer prosa en un plan por capa, no leer campos.
+- Escribir el spec del gestor de tareas expuso una ambigüedad del briefing que valía la pena resolver: *"no se puede completar una tarea si tiene una tarea **dependiente** sin completar"* invierte la regla si se lee literal, y la vuelve absurda (nada con dependientes sería completable). El spec fija la lectura correcta —lo que bloquea a una tarea son sus prerrequisitos, no sus dependientes— con un ejemplo numerado. **Es exactamente la clase de defecto que un spec SDD existe para eliminar**, y encontrarlo al escribirlo es evidencia de que el formato hace su trabajo.
+- La convención es una carga sobre quien escribe specs futuros. Para un proyecto de 2.5 semanas con un solo spec es trivial; a escala haría falta una plantilla o un generador.
+
+## ADR-011 — Scope de los subagentes de capa: tools, modelo, límites y alcance de archivos
+**Fecha:** 2026-08-07
+**Estado:** **Propuesta** — el conjunto se valida en el Bloque 4 del `ROADMAP.md`
+**ADRs relacionados:** ADR-001 (los agentes son subagentes de Claude Code), ADR-010 (el servidor MCP que consumen), ADR-004 (por qué consultan el gate).
+
+### Contexto
+ADR-001 dejó fijado que los agentes de capa se definen como subagentes de Claude Code, no como prompts sueltos. Falta decidir el scope de cada uno: qué herramientas tiene, con qué modelo corre, qué límites lo acotan y qué archivos puede tocar.
+
+Al relevar la documentación de Claude Code aparecieron tres hechos que cambian el diseño previsto:
+
+1. **El frontmatter de un subagente no tiene campo de rutas.** Los campos son `name`, `description`, `tools`, `disallowedTools`, `model`, `permissionMode`, `mcpServers`, `hooks`, `maxTurns`. `tools` es un allowlist de **herramientas**, no de paths. "Cada agente solo toca su capa" no es expresable en frontmatter.
+2. **`mcpServers` distingue dos formas con consecuencias muy distintas.** Una **referencia por nombre** comparte la conexión de la sesión padre; una **definición inline** se conecta al arrancar el subagente y se desconecta al terminar.
+3. **Existen `model` y `maxTurns` por subagente**, aplicados por Claude Code.
+
+### Decisión
+Cuatro subagentes, versionados como plantillas en [templates/agents/](templates/agents/) y copiados a `.claude/agents/` del workspace generado al prepararlo.
+
+| Agente | `tools` | `model` | `maxTurns` | Alcance |
+|---|---|---|---|---|
+| `spec-analyzer` | `Read`, `Grep`, `Glob` | `sonnet` | 15 | Produce el plan de tareas. **Sin permiso de escritura** |
+| `domain` | + `Write`, `Edit`, MCP `lsp` | `sonnet` | 40 | Entidades e invariantes |
+| `api` | ídem | `haiku` | 40 | Endpoints y persistencia |
+| `frontend` | ídem | `haiku` | 40 | Interfaz React |
+
+Cuatro decisiones dentro de esa:
+
+- **`mcpServers` por referencia de nombre, nunca inline.** Con una definición inline —y sobre todo con transporte stdio— cada spawn de subagente levantaría su propio language server y pagaría el indexado desde cero, que es justo la ventana en la que el gate devuelve falsos verdes (ADR-006). La referencia comparte la conexión y los servidores indexan una vez por corrida.
+- **`model` como palanca de costo, no de estilo.** La API y el frontend son trabajo mecánico sobre un dominio ya definido: `haiku` alcanza. El dominio, donde se interpreta la regla de negocio y donde un error se propaga a las tres capas, se queda en `sonnet`. Es una mitigación concreta del riesgo R1 del `ROADMAP.md` (límite de 5 h del plan Pro).
+- **`maxTurns` por agente.** Techo duro aplicado por Claude Code, no por nuestro código. Cubre parte de la obligación de terminación de ADR-003 sin que tengamos que escribirla; el límite de iteraciones del grafo sigue siendo nuestro y opera por encima. Dos techos independientes, porque un agente colgado y un ciclo del grafo que no converge son fallas distintas.
+- **El alcance de archivos se enforcea con un hook `PreToolUse` por subagente**, que rechaza un `Write` o `Edit` fuera de la carpeta de la capa. **Se diseña acá y se implementa en el Bloque 4.** Mientras tanto, el alcance está declarado en el prompt de cada agente: instrucción, no barrera.
+
+### Alternativas
+- **Un solo agente para las tres capas** → descartado: sin fronteras, el gate no puede atribuir un diagnostic a un responsable y el loop de revisión no sabe a quién volver. La partición por capa es lo que hace que la arista condicional del grafo tenga a dónde ir.
+- **Restringir archivos con `permissions.deny` en `settings.json`** → descartado como mecanismo principal: esas reglas son **de sesión, no por agente**, así que no distinguen al agente de dominio del de API. Sirven como red adicional, no como la frontera.
+- **Todo en `haiku` para minimizar costo** → descartado: el dominio es donde una interpretación equivocada del spec se paga en las tres capas. Ahorrar ahí es el peor lugar donde ahorrar.
+- **Sin `maxTurns`, confiando solo en el límite del grafo** → descartado: un agente que se cuelga dentro de su propio turno no llega nunca a devolver control al grafo, así que el límite del grafo no lo alcanza.
+
+### Consecuencias
+- **Hasta que exista el hook, el alcance de archivos es una convención.** Un agente puede escribir fuera de su capa y nada lo detiene salvo el prompt. Aceptado para los Bloques 2 y 3, cerrado en el 4. Es una deuda con fecha, no un descuido.
+- **El agente de API depende de poder consultar el dominio.** No lo escribió él y no debe asumir firmas: `workspaceSymbol`, `documentSymbol` y `definition` son su forma de preguntar. Es la función (2) de ADR-004 en uso concreto — y si esos tools no existieran, este agente estaría adivinando.
+- **`spec-analyzer` sin permiso de escritura es deliberado.** Su salida es un plan; si pudiera escribir código, la frontera entre planificar y ejecutar se disolvería en el primer turno.
+- Los cuatro prompts repiten la misma instrucción sobre `status: "indexing"`. Es duplicación consciente: es la trampa más cara del proyecto y cada agente la enfrenta solo.
+- **Queda pendiente de verificación** que el conjunto funcione headless: referencia por nombre desde el frontmatter de un subagente, con el servidor pre-aprobado. Si algo falla, este ADR se actualiza con la razón.
+
+## ADR-010 — Contrato del servidor MCP de LSP: tools, transporte HTTP y formato de `Diagnostic`
+**Fecha:** 2026-08-07
+**Estado:** **Propuesta** — se verifica contra servidores reales en el Bloque 2 del `ROADMAP.md`
+**ADRs relacionados:** ADR-004 (por qué LSP es la fuente de verdad), ADR-005 (por qué se expone como MCP), ADR-006 (qué language servers envuelve).
+
+### Contexto
+ADR-005 decidió exponer el LSP como servidor MCP con **dos** consumidores: los agentes de capa, que quieren navegación durante su turno, y el orquestador, que quiere un veredicto para decidir la arista del grafo. Falta el contrato: qué tools, con qué firmas, qué transporte y qué forma tiene un diagnostic.
+
+### Decisión
+El contrato completo, con firmas y ejemplos, está en [docs/mcp-contract.md](docs/mcp-contract.md). Las decisiones que lo gobiernan:
+
+**Transporte HTTP, un solo servidor, referenciado por nombre.** No stdio. Tres razones en orden de peso: (1) un solo servidor garantiza que el gate y el agente vean los mismos diagnostics — con instancias separadas el grafo decidiría sobre una realidad que el agente no comparte; (2) los language servers arrancan e indexan una vez por corrida, no una vez por spawn de subagente; (3) HTTP reconecta solo con backoff, stdio no.
+
+**Cinco tools:** `diagnostics` (los dos consumidores), y `definition`, `references`, `documentSymbol`, `workspaceSymbol` (los agentes). Las cuatro de navegación son lo que sostiene el criterio de falsación de ADR-004.
+
+**`status: "ready" | "indexing"` en la respuesta de `diagnostics`.** Es el campo más importante del contrato. Un language server recién arrancado devuelve lista vacía mientras indexa; sin este campo, el gate lee eso como "compila limpio" y **aprueba código roto**. `"ready"` con lista vacía significa *no hay errores*; `"indexing"` significa *todavía no sé*. Hacer imposible confundirlos es una obligación del contrato, no del consumidor.
+
+**Truncado explícito y orden fijo.** La respuesta lleva `total`, `truncated` e `items` acotado, ordenado por severidad, después archivo, después línea. El recorte se hace por el final, así que lo que sobrevive es siempre lo que bloquea la compilación.
+
+**`range` en 1-based**, convertido en el servidor. LSP cuenta desde cero; los compiladores, los editores y las personas desde uno.
+
+**Sin campo `layer`.** Mapear ruta a capa es concern del orquestador. Deja el servidor agnóstico del proyecto y la decisión de a qué agente volver en `Orchestrator.Application`, donde se testea con fakes.
+
+### Alternativas
+- **Transporte stdio** → descartado por lo dicho arriba. Es el default y el más simple de arrancar; su costo es reindexado por spawn y ninguna garantía de que los dos consumidores vean lo mismo.
+- **Solo `diagnostics`, sin tools de navegación** → descartado: es literalmente el escenario que ADR-004 declaró como falsación de sí mismo.
+- **Un `Diagnostic` que replique el del protocolo LSP tal cual** → descartado: expondría 0-based y el ruido del protocolo a un consumidor que es un prompt. El servidor traduce.
+- **Que el orquestador use su propio cliente LSP directo, sin pasar por MCP** → descartado: serían dos implementaciones del mismo wrapping, y dos implementaciones divergen. Peor: divergirían justo en el punto donde el proyecto afirma que el agente y el gate ven la misma verdad.
+
+### Consecuencias
+- **Los servidores de `.mcp.json` con scope de proyecto piden aprobación interactiva.** En `claude -p` headless no hay quién apruebe, y el fallo no es un error: el agente corre **sin las tools de LSP, en silencio**, y el pipeline degrada a generación a ciegas — exactamente lo que el proyecto existe para evitar. El orquestador tiene que agregar el servidor a `enabledMcpjsonServers` en el `settings.json` del workspace generado, y **verificar al arrancar que las tools están disponibles** en vez de asumirlo. Registrado como riesgo en `ROADMAP.md`.
+- **Tres procesos que administrar** en `Orchestrator.Lsp`: el servidor MCP y los dos language servers. Apagado determinista obligatorio: un language server huérfano mantiene handles sobre `output/`, que ADR-008 exige poder borrar y regenerar de cero.
+- Un fallo del servidor devuelve error de MCP, nunca una respuesta vacía. Devolver `items: []` ante un servidor caído reintroduciría el falso verde por la puerta de atrás.
+- **El contrato está sin verificar.** Las firmas pueden cambiar cuando el Bloque 2 las pruebe contra Roslyn LSP y `typescript-language-server`. Los cambios actualizan este ADR y el documento del contrato.
 
 ## ADR-009 — Artefacto de juguete: gestor de tareas con dependencias, no un CRUD vacío
 **Fecha:** 2026-08-07
