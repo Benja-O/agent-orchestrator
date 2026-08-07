@@ -113,7 +113,9 @@ aplicalo directo (en código nuevo que estés generando vos).
 |---|---|
 | `src/` | La solución .NET del orquestador (ver estructura de proyectos en `AI.md`) |
 | `specs/` | Specs SDD de entrada. Hoy: el gestor de tareas de ADR-009 |
-| `templates/` | Plantillas que el orquestador inyecta en el workspace generado |
+| `docs/` | Documentos de diseño que no son ADR ni referencia técnica. Hoy: el contrato del servidor MCP |
+| `docs/prompts/` | Un prompt de arranque por bloque del `ROADMAP.md`, escrito al cerrar el bloque anterior |
+| `templates/` | Plantillas que el orquestador inyecta en el workspace generado: el `CLAUDE.md` de la app y las definiciones de subagente de `templates/agents/` |
 | `output/` | **Gitignoreado y desechable.** Ahí escribe el orquestador. Se borra y regenera de cero en cada corrida (ADR-008) |
 | `logs/` | Gitignoreado. Log estructurado JSONL de las corridas |
 | `orquestador-agentes-briefing.md` | El briefing original del desafío. Registro de origen, no se edita |
