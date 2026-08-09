@@ -15,26 +15,32 @@
 
 ---
 
-## Estado (2026-08-09) — Bloques 0, 1 y 2 cerrados; próximo: Bloque 3
+## Estado (2026-08-09) — Bloques 0 a 3 cerrados; próximo: Bloque 4
 
-**La capa LSP funciona contra servidores reales.** `src/Orchestrator.LspServer/` expone las cinco
-tools de [docs/mcp-contract.md](docs/mcp-contract.md) por HTTP, envolviendo Roslyn LSP y
-`typescript-language-server`. ADR-006 y ADR-010 pasaron a `Aceptada` con evidencia, y ADR-013
-cerró la última decisión abierta que quedaba del briefing sobre el stack.
+**El grafo corre end-to-end.** `src/Orchestrator.Domain/` y `src/Orchestrator.Application/`
+implementan la máquina de estados de ADR-003 con sus tres vías de terminación, el gate que
+nunca lee `indexing` como aprobación, y el Spec Analyzer. Corre entero contra
+`FakeAgentRunner` y `FakeLanguageServer`, que comparten un `FakeWorkspace` — 124 tests, ninguna
+tanda por encima de un segundo, verificado con `claude` fuera del `PATH`.
 
-**El Bloque 2 cerró cinco días antes de la fecha y sin usar el plan B.** El disparador de
-reversión a OmniSharp era el mié 13/08; no hizo falta. Con eso, **el riesgo técnico concentrado
-del proyecto (R3) está cerrado** y el margen acumulado —tres días del Bloque 1 más cinco de
-éste— queda disponible para el Bloque 4, que es donde ahora vive el riesgo real (cuota del plan
-Pro).
+**No queda ninguna decisión abierta del briefing.** ADR-014 (testing) y ADR-015
+(observabilidad) cerraron las dos últimas. `AI.md` pasó su revisión agendada: ya describe
+código real salvo los tres proyectos que faltan, marcados como tales.
+
+**El Bloque 3 cerró tres días antes de que empezara su ventana.** El margen acumulado —tres
+días del Bloque 1, cinco del 2, la ventana entera del 3— queda disponible para el Bloque 4, que
+es donde vive el riesgo real: la cuota del plan Pro (R1) y la aprobación silenciosa de
+`.mcp.json` en headless (R5).
 
 **Plazo: vie 2026-08-07 → lun 2026-08-24 (17 días).** Es el condicionante que ordena todas
 las prioridades de abajo: hay tiempo para un pipeline que funcione de punta a punta sobre un
 artefacto chico, y no lo hay para nada más.
 
-**Lo próximo — Bloque 3.** El esqueleto del grafo y el Spec Analyzer, construidos contra
-`FakeAgentRunner` y `FakeLanguageServer`. Es lo que más se evalúa, y ahora se construye sabiendo
-exactamente qué forma tiene el veredicto que consume, porque existe.
+**Lo próximo — Bloque 4.** Los dos adaptadores que faltan, `Orchestrator.Agents` y
+`Orchestrator.Lsp`, y la primera corrida con agentes reales. Se construye contra interfaces que
+ya existen y ya están ejercitadas: el grafo no distingue un agente real de un fake, así que lo
+único nuevo del bloque es lo que pasa del otro lado de esa frontera. **La primera cosa a
+comprobar es R5**, no la última.
 
 ---
 
@@ -45,7 +51,7 @@ exactamente qué forma tiene el veredicto que consume, porque existe.
 | **0** | vie 07/08 | Andamiaje documental (`CLAUDE.md`, `AI.md`, `DECISIONS.md`, `ROADMAP.md`, README stub) + `git init` | Los cinco documentos existen, las referencias cruzadas resuelven, commit inicial hecho | ✅ 07/08 |
 | **1** | sáb 08 – lun 10/08 | `specs/gestor-tareas.md` + contrato de tools del servidor MCP + scope de los subagentes | El spec está escrito en formato SDD, el contrato tiene firmas y formato de `Diagnostic` cerrados, y los cuatro subagentes están definidos — con sus tres ADRs | ✅ 07/08 |
 | **2** | sáb 09/08 | Servidor MCP de LSP sobre Roslyn LSP + `typescript-language-server` | Una consulta manual al servidor devuelve diagnostics reales de un `.cs` roto a propósito, **y** una consulta de `definition` devuelve la ubicación correcta. ADR-006 pasa a `Aceptada` o se revierte a OmniSharp | ✅ 09/08 |
-| **3** | mié 12 – dom 16/08 | Esqueleto del grafo (estado, nodos, transiciones) + Spec Analyzer | El grafo corre end-to-end contra `FakeAgentRunner` y `FakeLanguageServer`, incluido el ciclo de revisión y las tres vías de terminación. La suite corre sin `claude` en el `PATH` | ⬜ |
+| **3** | mié 12 – dom 16/08 | Esqueleto del grafo (estado, nodos, transiciones) + Spec Analyzer | El grafo corre end-to-end contra `FakeAgentRunner` y `FakeLanguageServer`, incluido el ciclo de revisión y las tres vías de terminación. La suite corre sin `claude` en el `PATH` | ✅ 09/08 |
 | **4** | lun 17 – vie 21/08 | Agentes de capa (dominio, API .NET, React) + loop de revisión contra diagnostics reales | Un error inyectado a propósito hace volver el grafo al agente de esa capa, y la siguiente iteración lo corrige. Visible en el log | ⬜ |
 | **5** | vie 21 – sáb 22/08 | Primera corrida completa: spec → app compilable | `output/` se genera de cero, la app compila, y el endpoint que intenta violar la invariante de ADR-009 la rechaza | ⬜ |
 | **6** | dom 23 – lun 24/08 | Pulido, README real, `DECISIONS.md` al día, demo ensayada | El README explica la arquitectura del grafo, la integración LSP y la integración con Claude Code. La demo corre de principio a fin sin intervención | ⬜ |
@@ -67,7 +73,8 @@ escrita en `AI.md`: consultar antes de que termine el indexado devuelve un falso
 
 **Bloque 3 — el grafo.** Lo que más se evalúa. Máquina de estados propia (ADR-003) con las
 tres vías de terminación obligatorias. Al cerrarlo, revisar `AI.md`: deja de ser arquitectura
-objetivo y pasa a describir código real.
+objetivo y pasa a describir código real. *Hecho: la revisión se aplicó y `AI.md` marca ahora
+qué proyectos existen y cuáles siguen siendo contrato.*
 
 **Bloque 4 — los agentes.** Acá se define el scope de cada subagente y se paga la primera
 cuota real del plan Pro. Es el bloque donde el riesgo de límite de uso se materializa.
@@ -84,34 +91,18 @@ arquitectura; el de la app generada aclara que es output, no trabajo manual.
 
 ## Decisiones pendientes
 
-De los cinco puntos que el briefing dejó abiertos, tres se cerraron en el Bloque 1 (ADR-010,
-ADR-011, ADR-012). Quedan dos.
-
-| # | Decisión | Se resuelve en | Produce |
-|---|---|---|---|
-| 4 | **Estrategia de testing del propio orquestador** (no de la app generada): cómo se valida que el grafo y el loop de revisión funcionan | Bloque 3 | ADR-014 |
-| 5 | **Nivel de logging y observabilidad del grafo** para que la demo muestre el proceso con claridad | Bloque 3 (diseño) / Bloque 6 (pulido) | ADR-015 |
+**Ninguna.** Los cinco puntos que el briefing dejó abiertos están cerrados: tres en el Bloque 1
+(ADR-010, ADR-011, ADR-012) y los dos últimos en el Bloque 3 — ADR-014, estrategia de testing
+del orquestador, y ADR-015, observabilidad del grafo.
 
 > Los números corrieron: ADR-013 se usó en el Bloque 2 para el lenguaje y la topología del
 > servidor MCP, que era la decisión que ADR-002 había dejado abierta "hasta el Bloque 2".
 
-Notas sobre el estado de cada una:
-
-- **#4 está parcialmente resuelta de antemano** por la regla de oro 3 de `AI.md` (fakes, sin
-  invocar la CLI real). Lo que falta es el diseño concreto: qué escenarios se testean, cómo
-  se graban las respuestas del `FakeAgentRunner`, y cómo se verifica que la suite no está
-  invocando nada real. Se le suma un caso concreto salido del Bloque 1: **el gate tiene que
-  tratar `status: "indexing"` como "esperar", nunca como aprobación** (ADR-010), y eso se
-  testea con `FakeLanguageServer`.
-  **El Bloque 2 le dejó el patrón ya probado de un lado:** `FakeLanguageServerSession` sirve
-  respuestas en forma de protocolo y toda la superficie de tools se ejercita contra él —
-  33 tests en 2 segundos, sin proceso, sin red y sin indexado. La pregunta que queda abierta es
-  la del otro lado, `FakeAgentRunner`, que es más difícil porque una respuesta de agente es
-  texto libre y no una estructura.
-- **#5** dejó de ser una decisión de infraestructura al cerrarse ADR-007: sin UI, el log es la
-  única ventana al grafo y es lo que se proyecta en la demo. El Bloque 1 le agregó materia
-  prima: los identificadores `RN-nn` / `CA-nn` del spec (ADR-012) hacen que el log pueda
-  mostrar **qué regla se está implementando en qué capa**, en vez de solo qué nodo corre.
+Queda **un** ADR en estado `Propuesta`, que no es una decisión abierta sino una decisión tomada
+y todavía no verificada contra la realidad: **ADR-011**, el scope de los subagentes de capa.
+Falta comprobar que el conjunto funciona headless —referencia a `mcpServers` por nombre desde
+el frontmatter, con el servidor pre-aprobado—, que es exactamente el riesgo R5. Se resuelve en
+el Bloque 4, o el ADR se actualiza con la razón.
 
 ---
 
@@ -179,10 +170,79 @@ retomar si el proyecto continuara.
 | D6 | Reabrir una tarea completada abriría un hueco en RN-01 y queda fuera del spec | `specs/gestor-tareas.md`, fuera de alcance | Solo si se amplía el artefacto de juguete, cosa que ADR-009 desaconseja |
 | D7 | `workspaceSymbol` puede volver vacío mientras el índice de símbolos se calienta, y el contrato no distingue eso de "no existe" | Bloque 2, ADR-010 | Si un agente de capa concluye que una entidad no existe cuando sí existe. El gate no usa esta tool, así que no bloquea el pipeline |
 | D8 | El servidor MCP está fijado a `win-x64`: el paquete de Roslyn LSP es específico por RID | Bloque 2, ADR-006 | Si el proyecto tiene que correr en otra plataforma. Es una línea del `.csproj`, no un rediseño |
+| D9 | Volver a una capa anterior re-invoca también a las posteriores desde cero, aunque su código no haya cambiado | Bloque 3, `GraphRunner` | Si el costo por corrida se vuelve el problema. Requiere saber qué archivos tocó cada agente, que hoy el grafo no sabe |
+| D10 | La detección de no-progreso es heurística cuando el gate trunca: la huella solo cubre la ventana visible | Bloque 3, ADR-014 | Si aparece una corrida real con cientos de diagnostics. Hoy la respalda el límite de iteraciones y el log registra `truncated` |
+| D11 | El formato de salida del Spec Analyzer vive en dos lugares: el prompt de la plantilla y el parser | Bloque 3, ADR-014 | Si el parser empieza a fallar contra respuestas reales. Se cobra con un test que valide la plantilla contra los fixtures |
 
 ---
 
 ## Historial completado
+
+### ✅ Bloque 3 — El grafo y el Spec Analyzer (2026-08-09)
+
+Lo que más se evalúa del proyecto, cerrado antes de que empezara su ventana. Cinco proyectos
+nuevos, 91 tests nuevos, y las dos últimas decisiones del briefing.
+
+**Criterio de salida, cumplido.** Se pedía que el grafo corriera end-to-end contra fakes,
+incluido el ciclo de revisión y las tres vías de terminación, y que la suite corriera sin
+`claude` en el `PATH`. Las tres vías tienen su test, y hay una cuarta que ADR-003 no había
+enumerado:
+
+| Vía de terminación | Cómo se ejercita |
+|---|---|
+| Límite de iteraciones por nodo | El agente produce errores distintos hasta agotar el techo |
+| No-progreso | El agente devuelve el mismo conjunto de diagnostics dos veces |
+| Fallo terminal | Agente que no termina, plan que no parsea, diagnostic sin capa dueña |
+| **Gate que nunca sale de `indexing`** | La cuarta, que no estaba en ADR-003 y que el Bloque 2 produjo de verdad |
+
+Verificación literal: `dotnet test src/Orchestrator.slnx` con `claude` sacado del `PATH` →
+124 tests, todo en verde, ninguna tanda por encima de un segundo.
+
+**Las dos decisiones abiertas, cerradas.** ADR-014 y ADR-015. Con eso el briefing no deja
+ningún punto pendiente.
+
+**Tres hallazgos de diseño que valen más que el código:**
+
+1. **El texto libre de los agentes casi no existe como problema, una vez visto de dónde
+   viene.** Un agente de capa no le reporta al grafo: escribe archivos, y quien habla es el
+   gate. Así que `IAgentRunner` devuelve cómo terminó la invocación, no qué dijo, y el
+   transcripto queda para el log. **Prosa hay en un solo nodo** —el Spec Analyzer, cuyo plan
+   *es* su producto— y ahí se concentra todo el parseo, en una función pura con respuestas
+   grabadas. Era el problema que el prompt del bloque marcaba como el lado difícil; la salida
+   fue no resolverlo sino disolverlo.
+2. **Guionar el agente y el gate por separado es una trampa cómoda.** Dos guiones
+   independientes pueden contradecirse, y entonces un test pasa describiendo una corrida
+   imposible. Los dos fakes comparten un `FakeWorkspace`: el agente lo muta, el gate lo
+   reporta. El grafo converge porque el agente reparó algo. Y "el agente no cambió nada" deja
+   de ser un veredicto guionado y pasa a ser la definición literal del test de no-progreso.
+3. **`indexing` obliga a esperar, y esperar obliga a un techo que ADR-003 no había pedido.**
+   Tratar `indexing` como aprobación es el falso verde; tratarlo como "esperar y reconsultar"
+   sin límite es un cuelgue — que es exactamente el fallo que el Bloque 2 produjo con Roslyn
+   (ADR-013). Agotar el techo es fallo terminal, y lleva el `statusDetail` del propio servidor
+   en la traza para que se pueda diagnosticar.
+
+**Dos decisiones que cambiaron documentos existentes:**
+
+- **El gate se consulta siempre sobre el workspace entero, no sobre la capa que acaba de
+  trabajar.** Scopear por capa haría la corrida más prolija y escondería el caso que el
+  proyecto existe para atrapar: el agente de API llamando a un método de dominio que no
+  existe. Con veredicto global más `LayerMap`, la arista condicional puede devolverle el
+  trabajo a la capa que realmente lo posee — hay test de que un error en `src/Domain/**`
+  durante la etapa de API vuelve al agente de dominio.
+- **`AI.md` enmendó su regla de oro 4:** el reloj es `TimeProvider` del BCL, no un `IClock`
+  propio. Un `IClock` de solo `UtcNow` no cubría la espera entre reconsultas del gate.
+
+**Un defecto encontrado en documentación propia, sin corregir todavía:** el encabezado de
+`specs/gestor-tareas.md` afirma que *"todo `CA-nn` cita al menos una `RN-nn` existente"*, y
+ADR-012 repite la afirmación — pero la tabla del propio spec tiene cinco criterios con `—` en
+la columna *Verifica*, y el texto los declara legítimos. El spec se contradice a sí mismo. El
+validador implementa la invariante que sí se sostiene —**ninguna cita apunta a una regla
+inexistente**, más identificadores únicos y correlativos— y la redacción de los dos documentos
+queda por arreglar.
+
+**Lo que quedó abierto, dicho:** deudas D9 (volver atrás re-invoca las capas posteriores),
+D10 (no-progreso es heurístico cuando el gate trunca) y D11 (el formato del plan vive en el
+prompt y en el parser).
 
 ### ✅ Bloque 2 — La capa LSP detrás del servidor MCP (2026-08-09)
 

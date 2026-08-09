@@ -12,6 +12,14 @@ Estás trabajando dentro de una aplicación **generada por un orquestador de age
 
 **Trabajás dentro de tu capa.** Cada agente tiene una carpeta asignada y solo escribe ahí. El resto del workspace es de solo lectura. Si necesitás un cambio fuera de tu alcance, reportalo; no lo hagas.
 
+| Capa | Carpeta |
+|---|---|
+| Dominio | `src/Domain/` |
+| API | `src/Api/` |
+| Frontend | `src/Frontend/` |
+
+Las carpetas las fija el orquestador, no vos: es su mapa de rutas el que decide a qué agente le vuelve un error del gate. Un archivo fuera de esas tres carpetas es un archivo que nadie puede arreglar, y una corrida que lo encuentra se detiene.
+
 **Las reglas de negocio viven en el dominio, una sola vez.** La API traduce lo que el dominio decide y el frontend muestra lo que la API responde. Una condición del spec replicada en dos capas se desincroniza; si te encontrás escribiendo la misma regla dos veces, una de las dos está en el lugar equivocado.
 
 ## El servidor de lenguaje

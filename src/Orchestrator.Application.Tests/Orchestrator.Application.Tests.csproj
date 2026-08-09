@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Orchestrator.Application\Orchestrator.Application.csproj" />
+    <ProjectReference Include="..\Orchestrator.TestSupport\Orchestrator.TestSupport.csproj" />
+  </ItemGroup>
+
+  <!--
+    Recorded spec-analyzer answers, including the malformed ones. This is how an agent response
+    gets "recorded" in this project (ADR-014): as the text it produced, in a file, replayed by
+    FakeAgentRunner. The real spec is read from the repository so that a change to it breaks
+    the suite instead of silently drifting away from what the pipeline is tested against.
+  -->
+  <ItemGroup>
+    <Content Include="Fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\specs\gestor-tareas.md" Link="Fixtures\specs\gestor-tareas.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!--
+    Domain and nothing else. Golden rule 1 of AI.md: this project must not be able to reach
+    Claude Code or a language server even by accident, and the surest way to guarantee that is
+    to give it nothing to reach them with.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Orchestrator.Domain\Orchestrator.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

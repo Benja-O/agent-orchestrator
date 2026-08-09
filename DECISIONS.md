@@ -30,6 +30,8 @@
 
 | ADR | Título corto | Área | Estado |
 |---|---|---|---|
+| ADR-015 | Observabilidad del grafo: eventos tipados con doble lectura, JSONL y consola | Observabilidad / Producto | Aceptada |
+| ADR-014 | Estrategia de testing del orquestador: escenario compartido y una sola frontera de texto libre | Testing / Costo | Aceptada |
 | ADR-013 | El servidor MCP en .NET, como proceso propio dueño de los language servers | LSP / Stack | Aceptada |
 | ADR-012 | Formato del spec SDD: markdown humano con identificadores estables | Spec / Entrada | Aceptada |
 | ADR-011 | Scope de los subagentes de capa: tools, modelo, límites y alcance de archivos | Agentes / Costo | **Propuesta** |
@@ -45,6 +47,128 @@
 | ADR-001 | Claude Code CLI headless (`claude -p`), no la API de Anthropic | Agentes / Costo | Aceptada |
 
 ---
+
+## ADR-015 — Observabilidad del grafo: eventos tipados con doble lectura, JSONL y consola
+**Fecha:** 2026-08-09
+**Estado:** Aceptada
+**ADRs relacionados:** ADR-007 (sin UI, el log es la única ventana), ADR-012 (los identificadores que lo vuelven trazable), ADR-003 (las razones de terminación que registra), ADR-014 (cómo se testea).
+
+### Contexto
+Era la última decisión abierta del briefing junto con ADR-014, y la que menos parecía una decisión de arquitectura. Lo es por una razón concreta que ADR-007 dejó escrita: **sin UI y sin persistencia, el log es el único lugar donde una corrida existe**, y es lo que se proyecta en la demo. Eso lo convierte en decisión de producto.
+
+El requisito tiene dos mitades que tiran en direcciones opuestas. Una persona mirando la pantalla mientras el pipeline corre necesita líneas cortas y jerarquizadas. Un análisis posterior —por qué se trabó, cuántas iteraciones tomó cada capa— necesita campos tipados. Un log que sirve bien a una de las dos mitades suele servir mal a la otra, y un log que intenta las dos suele terminar con las dos versiones describiendo corridas distintas.
+
+### Decisión
+
+**1. Un jerarquía de eventos tipados en `Orchestrator.Domain`, y cada evento sabe renderizarse.** `RunEvent` obliga a dos cosas: `Event`, el nombre estable que lee una máquina, y `Summary`, la línea que lee una persona. Las dos salen del mismo objeto.
+
+Eso es lo que impide la deriva. La alternativa habitual —un logger estructurado por un lado y `Console.WriteLine` por el otro— deja dos descripciones del mismo hecho mantenidas en dos lugares, y la de consola es siempre la que queda vieja. Acá no se pueden desincronizar porque no son dos.
+
+**2. Once eventos, elegidos por lo que hay que poder responder después:**
+
+| Evento | La pregunta que contesta |
+|---|---|
+| `run-started` | Qué spec, cuántas reglas y criterios |
+| `plan-produced` | En cuántas tareas por capa se descompuso, **y qué criterios quedaron sin cubrir** |
+| `node-entered` | Qué nodo, qué intento, **y qué `RN-nn` está implementando esa capa** |
+| `agent-invoked` / `agent-returned` | A quién se llamó, con cuántos diagnostics, cómo terminó, cuánto tardó |
+| `gate-waiting-for-index` | Que el gate esperó en vez de aprobar, y qué dijo el servidor |
+| `gate-evaluated` | El veredicto: total, truncado, errores, warnings, la huella y una muestra |
+| `review-iteration` | **Qué cambió respecto de la iteración anterior** |
+| `run-terminated` | Por qué paró, dónde, y la traza completa de nodos |
+
+**3. El evento que justifica el diseño es `review-iteration`.** "El agente corrió otra vez" no dice nada; "el agente resolvió cuatro errores e introdujo uno" es el pipeline funcionando —o no— de forma visible. Se registra `resolved`, `introduced` y `persisting`, que salen de comparar la huella del veredicto con la anterior. Es la misma comparación que alimenta la detección de no-progreso, así que el log muestra exactamente el dato sobre el que el grafo decidió.
+
+**4. Los identificadores del spec viajan en el log.** ADR-012 fijó `RN-nn` / `CA-nn` argumentando que hacen trazable el pipeline; acá se cobra: `node-entered` lleva las reglas de la capa y `plan-produced` lleva los criterios que ninguna tarea reclamó. La demo puede decir *"el agente de dominio está implementando RN-01, RN-02 y RN-03"* en vez de *"corriendo nodo domain-implementation"*.
+
+**5. Dos observadores sobre la misma secuencia**, en `Orchestrator.Observability`: `JsonlRunObserver` escribe una línea JSON por evento con `timestamp`, `run` y `event` siempre primero y siempre en ese orden; `ConsoleRunObserver` escribe `Summary`. `CompositeRunObserver` los combina. El JSONL descarta `summary` —es la misma información en otra forma— y las duraciones van en milisegundos numéricos, con la clave nombrada por su unidad.
+
+**6. La consola filtra, el archivo no.** Las primeras dos esperas de indexado son normales y no se muestran; de la tercera en adelante sí. El JSONL las registra todas. Un `indexing` eterno es el fallo silencioso más caro del proyecto (ADR-013): en el archivo tiene que estar entero, en la pantalla tiene que aparecer cuando deja de ser rutina.
+
+### Alternativas
+- **Un logger estructurado de librería (Serilog, `Microsoft.Extensions.Logging`)** → descartado, y es la alternativa que más cerca estuvo. Da sinks, niveles y enriquecimiento gratis. Se descartó porque lo que este proyecto necesita del log no son niveles sino **un vocabulario cerrado de hechos del grafo**: con un logger genérico, `review-iteration` es una plantilla de string con parámetros y nada garantiza que se emita completa, mientras que como tipo el compilador lo exige. El costo real de la decisión es que no hay sinks: si en el Bloque 6 hiciera falta uno, `IRunObserver` es la costura donde entraría.
+- **Solo JSONL, y que la demo se mire con `jq`** → descartado: la demo se proyecta en vivo y nadie lee JSON crudo en una pantalla compartida.
+- **Solo consola, y reconstruir después leyendo el texto** → descartado por lo mismo al revés: convierte el análisis posterior en parseo de prosa, que es justamente lo que ADR-014 logró eliminar de todo el resto del sistema.
+- **Registrar el transcripto completo de cada agente en el log** → descartado. Está en `AgentOutcome` y disponible para quien depure, pero volcarlo al JSONL haría el archivo ilegible y a la vez inútil: el texto del agente es lo único sobre lo que el grafo **no** decide (ADR-014), así que no explica ninguna transición.
+
+### Consecuencias
+- **El log es un entregable y se testea como tal.** Hay tests sobre el orden de las claves, sobre que los identificadores salgan como strings y no como objetos, sobre que `summary` no se duplique, y sobre que cada evento produzca una línea de consola no vacía. Un log que se rompe en silencio es un log que no está.
+- **`Orchestrator.Application` no escribe archivos.** Los eventos son del dominio; escribirlos es del adaptador. Por eso existe `Orchestrator.Observability` como proyecto propio en vez de un `StreamWriter` dentro del `GraphRunner`.
+- **El `GraphRunner` recibe `IRunObserver` por constructor y nunca `null`.** `NullRunObserver` existe para el caso de no querer log; que sea explícito evita el patrón de comprobar nulos en cada punto de emisión.
+- El pulido —colores, agrupamiento, quizá un resumen final— queda para el Bloque 6, que es donde el ROADMAP lo tenía previsto. Lo que este bloque cierra es el vocabulario, que es lo que después no se puede cambiar sin romper el análisis.
+
+## ADR-014 — Estrategia de testing del orquestador: escenario compartido y una sola frontera de texto libre
+**Fecha:** 2026-08-09
+**Estado:** Aceptada
+**ADRs relacionados:** ADR-001 (por qué la cuota es una restricción de diseño), ADR-003 (las tres vías de terminación que hay que poder testear), ADR-010 (el `status` que el gate no puede malinterpretar), ADR-012 (los identificadores que el spec tiene que sostener).
+
+### Contexto
+La regla de oro 3 de `AI.md` ya fijaba el **qué** desde el Bloque 0 —fakes, sin invocar la CLI real— con una razón de costo y no de estilo: el límite de 5 h del plan Pro se agota justo depurando la máquina de estados (ADR-001). Faltaba el **cómo**: qué escenarios se testean, cómo se graban las respuestas del `FakeAgentRunner`, y cómo se verifica que la suite no está invocando nada real.
+
+El Bloque 2 dejó resuelto un lado y probado que el patrón funciona: `FakeLanguageServerSession` sirve respuestas en forma de protocolo, y toda la superficie de tools se ejercita contra él en 33 tests y 2 segundos. El lado difícil era el otro, y la dificultad es concreta: **una respuesta de agente es texto libre, no una estructura.** No hay una forma de protocolo que un fake pueda servir.
+
+### Decisión
+
+**1. El texto libre cruza a estructura en exactamente un lugar, y ese lugar es una función pura.**
+
+La salida al problema fue notar que el grafo casi nunca lee lo que el agente dice. Un agente de capa **no le reporta al grafo**: escribe archivos, y quien habla es el gate (ADR-004). Así que `IAgentRunner` devuelve un `AgentOutcome` con cómo terminó la invocación —completó, agotó turnos, timeout, falló— y el transcripto **para el log, no para decidir**.
+
+Queda un solo nodo cuya salida *es* prosa: el spec analyzer, cuyo plan es su producto. Ahí sí hay un parser, `PlanParser`, y ahí sí hay respuestas grabadas. Todo el problema del texto libre queda concentrado en una función sin estado, que se testea contra archivos.
+
+Consecuencia práctica: `FakeAgentRunner` no tiene que fabricar prosa creíble para nueve de cada diez turnos. Solo tiene que hacer lo que hace un agente real: **tocar el workspace**.
+
+**2. Las respuestas se graban como archivos de texto, una por escenario, incluidas las malformadas.**
+
+Viven en `src/Orchestrator.Application.Tests/Fixtures/spec-analyzer/`. Hay un plan bien formado que cubre los trece `CA-nn` del spec real, y cuatro formas de estar mal que valía la pena grabar porque son las que un modelo produce de verdad: inventar una capa (`persistencia`), citar identificadores que no existen, proponer una tarea que no se atribuye a nada, y contestar con una pregunta en vez de un plan. Un quinto archivo graba la variación inocua —bloque de código, viñetas con asterisco, guion corto, capa en mayúscula— que el parser tiene que tolerar sin quejarse.
+
+**El spec no se copia: se enlaza.** El `.csproj` referencia `specs/gestor-tareas.md` del repo, así que un cambio que rompa las invariantes de ADR-012 rompe la suite en vez de alejarse en silencio de aquello contra lo que el pipeline está testeado.
+
+**3. Los dos fakes comparten un escenario, y esa es la decisión central.**
+
+La forma obvia de testear un loop de revisión es guionar el agente y el gate por separado: el agente devuelve una secuencia de respuestas, el gate una secuencia de veredictos. **Es una trampa**, y vale nombrarla porque es cómoda: los dos guiones pueden contradecirse, así que un test puede pasar describiendo una corrida que no podría ocurrir — un agente que "arregló" algo que el gate nunca vio roto.
+
+En su lugar hay un `FakeWorkspace`. `FakeAgentRunner` lo muta como lo mutaría un agente real y `FakeLanguageServer` reporta lo que hay adentro. El grafo converge porque el agente reparó algo, no porque el guion dijera que el próximo veredicto era limpio. Y **"el agente no cambió nada" deja de ser un veredicto guionado y pasa a ser la definición literal del test de no-progreso** — que es, además, la falla que todo el proyecto existe para atrapar (ADR-004).
+
+**4. Los escenarios que la suite cubre**, elegidos por riesgo y no por cobertura:
+
+| Escenario | Qué protege |
+|---|---|
+| Las tres capas en orden, todo limpio | El camino feliz, y que el orden de capas se respete |
+| El gate encuentra errores y la siguiente iteración los corrige | El ciclo de revisión completo, con los diagnostics llegando al prompt |
+| Un error en `src/Domain/**` durante la etapa de API | **La arista característica**: vuelve al agente de dominio, no al que corría |
+| El agente devuelve los mismos diagnostics dos veces | Terminación por no-progreso (ADR-003) |
+| El agente produce errores distintos hasta el techo | Terminación por límite de iteraciones (ADR-003) |
+| El agente no termina: error, `maxTurns`, timeout | Terminación por fallo terminal, con traza |
+| **El gate contesta `indexing` con lista vacía sobre un workspace roto** | El falso verde. El test más importante del bloque |
+| El gate contesta `indexing` con una lista parcial | La segunda forma del mismo error |
+| El gate contesta `indexing` para siempre | Que esperar tenga techo y la corrida se detenga con el `statusDetail` del servidor |
+| Un diagnostic en un archivo de ninguna capa | Que no se descarte en silencio |
+| El plan no parsea, y parsea al segundo intento | El reintento del único nodo que devuelve prosa |
+| El spec se contradice a sí mismo | Que el input roto se detecte antes de gastar un turno |
+
+**5. Cómo se verifica que la suite no invoca nada real**, que era la tercera pregunta abierta. Tres mecanismos, de más débil a más fuerte:
+
+- **Tests de arquitectura**, en `ArchitectureTests`. Las reglas de oro dejan de ser greps que alguien tiene que acordarse de correr y pasan a fallar el build: `Domain` y `Application` no referencian ningún otro ensamblado del repo; ningún tipo suyo menciona `System.Diagnostics.Process` en su superficie; **toda implementación de `IAgentRunner` e `ILanguageServerGateway` alcanzable desde la suite vive en `Orchestrator.TestSupport`**; y el `GraphRunner` recibe su reloj por constructor.
+- **El tiempo total.** 124 tests, ninguna suite por encima de un segundo. Una suite que tarda minutos está invocando algo real, y eso se ve sin analizar nada.
+- **Correr la suite con `claude` fuera del `PATH`.** Es la verificación literal de la regla, hecha en vez de asumida.
+
+**6. El reloj es `TimeProvider` del BCL, no un `IClock` propio.** Esto **enmienda la regla de oro 4 de `AI.md`**, que nombraba una interfaz propia. `TimeProvider` es la abstracción estándar desde .NET 8, cubre lectura y espera en la misma pieza —un `IClock` de solo `UtcNow` no habría cubierto la espera entre reconsultas del gate— y no hay que mantenerla. Lo que la regla protege no cambia: nada de `DateTime.UtcNow` fuera de adaptadores.
+
+El fake es propio y mínimo: `SteppingTimeProvider` avanza un paso fijo en cada lectura, lo que da timestamps deterministas y duraciones no nulas en el log sin esperar. Deliberadamente **no** falsea temporizadores. La única espera real del sistema —el gate reconsultando mientras un servidor indexa— se ejercita con el delay en cero, porque lo que hay que testear ahí es el techo de intentos; que la espera efectivamente ocurra se cubre aparte, con el reloj real y un presupuesto de milisegundos.
+
+### Alternativas
+- **Guionar el agente y el gate por separado** → descartado arriba, con la razón. Es más simple de escribir y permite tests que describen corridas imposibles.
+- **Que `FakeAgentRunner` escriba archivos de verdad en un directorio temporal, y que el fake del gate los lea** → descartado. Es más fiel y bastante más caro: obliga a que el fake del gate entienda algo de C# o de TypeScript para producir diagnostics, o a inventar un lenguaje de juguete. El `FakeWorkspace` en memoria da la misma garantía de consistencia —una sola fuente de verdad compartida— sin ese costo. La fidelidad que falta la cubre la verificación manual del Bloque 2, que sí usa servidores reales.
+- **Grabar respuestas de agente reales, corriendo `claude -p` una vez y guardando la salida** → descartado *para este bloque*, no en general. Es lo que hace un test de contrato honesto, y la regla de costo del bloque lo prohibía explícitamente. Cuando el Bloque 4 corra agentes de verdad, la salida real del spec analyzer debería reemplazar al fixture escrito a mano — y si difiere, eso es un hallazgo, no un ajuste.
+- **Una librería de mocking** → descartado: los fakes acá tienen comportamiento —el escenario compartido es el punto— y eso es una clase, no una expectativa configurada.
+- **`Microsoft.Extensions.TimeProvider.Testing` para el `FakeTimeProvider`** → descartado por una razón práctica: su modelo obliga a que alguien avance el reloj para que un temporizador dispare, y con el grafo esperando dentro de un `await` eso significa correr la corrida en paralelo y bombear el reloj desde afuera. Treinta líneas propias sin temporizadores dan tests deterministas y legibles.
+
+### Consecuencias
+- **El grafo no puede distinguir un agente real de un fake, y eso es la garantía.** La regla de oro 3 se cumple por construcción, no por disciplina: no hay nada en `Application` que sepa que del otro lado hay un proceso.
+- **El transcripto del agente queda como dato de log y de nada más.** Está en `AgentOutcome` y se puede leer al depurar, pero ninguna transición depende de él. Si alguna vez el grafo empieza a parsear texto de un agente de capa, esta decisión se rompió.
+- **La suite tiene un costo fijo nuevo: mantener el formato de salida del spec analyzer en dos lugares.** El parser lo espera y `templates/agents/spec-analyzer.md` lo instruye. Es la clase de duplicación que se desincroniza, y la mitigación es que los fixtures son literalmente lo que el prompt pide.
+- **Los tests de arquitectura son débiles en un punto y conviene decirlo:** verifican la superficie de los tipos, no el cuerpo de los métodos. Una llamada a `Process.Start` escondida dentro de un método de `Application` no la detectarían. Lo que sí la detecta es que `Orchestrator.Application` no referencia nada que la haga posible.
+- Aparece `Orchestrator.TestSupport` como proyecto de producción-que-no-es-producción. Solo lo referencian proyectos de test; el test de arquitectura que exige que todas las implementaciones de las interfaces vivan ahí es, de paso, el que detectaría si eso dejara de ser cierto.
 
 ## ADR-013 — El servidor MCP en .NET, como proceso propio dueño de los language servers
 **Fecha:** 2026-08-09

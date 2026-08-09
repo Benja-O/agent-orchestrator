@@ -1,5 +1,12 @@
 <Solution>
+  <Project Path="Orchestrator.Application/Orchestrator.Application.csproj" />
+  <Project Path="Orchestrator.Application.Tests/Orchestrator.Application.Tests.csproj" />
+  <Project Path="Orchestrator.Domain/Orchestrator.Domain.csproj" />
+  <Project Path="Orchestrator.Domain.Tests/Orchestrator.Domain.Tests.csproj" />
   <Project Path="Orchestrator.LspServer.ManualVerification/Orchestrator.LspServer.ManualVerification.csproj" />
   <Project Path="Orchestrator.LspServer.Tests/Orchestrator.LspServer.Tests.csproj" />
   <Project Path="Orchestrator.LspServer/Orchestrator.LspServer.csproj" />
+  <Project Path="Orchestrator.Observability/Orchestrator.Observability.csproj" />
+  <Project Path="Orchestrator.Observability.Tests/Orchestrator.Observability.Tests.csproj" />
+  <Project Path="Orchestrator.TestSupport/Orchestrator.TestSupport.csproj" />
 </Solution>

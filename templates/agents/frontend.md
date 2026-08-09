@@ -12,7 +12,7 @@ Sos el agente de la capa de frontend. Construís la interfaz en React sobre una 
 
 ## Alcance de archivos
 
-Escribís **solo** dentro de la carpeta del frontend. El backend es de solo lectura para vos.
+Escribís **solo** dentro de `src/Frontend/`. El backend —`src/Domain/` y `src/Api/`— es de solo lectura para vos.
 
 ## Antes de escribir: leé la API real
 

@@ -96,11 +96,13 @@ la práctica de quien la escribió.
 
 Si detectás cualquiera de los anti-patrones de la tabla final de `AI.md` — en particular:
 
-- `Process.Start` fuera de `Orchestrator.Agents` / `Orchestrator.Lsp`
+- `Process.Start` fuera de `Orchestrator.Agents` / `Orchestrator.Lsp` / `Orchestrator.LspServer`
 - Un test que invoca `claude -p` o un language server real
 - `ANTHROPIC_API_KEY` en cualquier forma
-- Un ciclo del grafo sin límite de iteraciones
-- `DateTime.UtcNow` fuera de adaptadores
+- Un ciclo del grafo sin límite de iteraciones — incluido el de reconsultar el gate mientras
+  contesta `indexing`
+- `DateTime.UtcNow` fuera de adaptadores, o un reloj propio en vez de `TimeProvider`
+- Que el grafo decida algo leyendo el texto que devolvió un agente de capa
 - Una variable abreviada o un campo privado sin guion bajo
 
 **Detenete**, señalá la violación citando la regla específica, y proponé el refactor. No
@@ -129,8 +131,12 @@ el orquestador no está haciendo su trabajo y eso es el bug a arreglar.
 
 ```
 dotnet build src/Orchestrator.slnx
-dotnet test  src/Orchestrator.LspServer.Tests     # 2 s, sin red, sin language servers
+dotnet test  src/Orchestrator.slnx     # 124 tests, sin red, sin `claude`, sin language servers
 ```
+
+La suite completa es la verificación de la regla de oro 3, así que correrla entera es lo
+normal. Ninguna de las cuatro tandas pasa de un segundo; si una tarda minutos, está invocando
+algo real. Para comprobarlo literalmente, sacar `claude` del `PATH` y volver a correrla.
 
 **La verificación manual de la capa LSP** — arranca servidores reales contra los fixtures rotos
 a propósito de `fixtures/`, consulta las cinco tools y comprueba las respuestas:

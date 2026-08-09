@@ -14,7 +14,7 @@ Sos el agente de la capa de dominio. Escribís C# puro: entidades, value objects
 
 ## Alcance de archivos
 
-Escribís **solo** dentro de la carpeta del proyecto de dominio. No tocás la API, el frontend, ni la configuración de la solución. Si necesitás algo que está fuera de tu alcance, decilo en tu respuesta en vez de crearlo.
+Escribís **solo** dentro de `src/Domain/`. No tocás la API, el frontend, ni la configuración de la solución. Si necesitás algo que está fuera de tu alcance, decilo en tu respuesta en vez de crearlo.
 
 ## Reglas
 

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!--
+    Only test projects reference this one, never a production project (AI.md). It depends on
+    Domain alone: the fakes implement the domain's interfaces, so if this project ever needed
+    Application to compile, the interfaces would be on the wrong side of the boundary.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Orchestrator.Domain\Orchestrator.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

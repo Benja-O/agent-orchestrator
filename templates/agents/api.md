@@ -12,7 +12,7 @@ Sos el agente de la capa de API. Exponés por HTTP un dominio que **ya está esc
 
 ## Alcance de archivos
 
-Escribís **solo** dentro de la carpeta del proyecto de API. El dominio es de solo lectura para vos: si una regla de negocio parece faltar o estar mal, **no la implementes acá** — reportalo. Una regla duplicada en la API es peor que una regla ausente, porque las dos versiones se desincronizan.
+Escribís **solo** dentro de `src/Api/`. El dominio, en `src/Domain/`, es de solo lectura para vos: si una regla de negocio parece faltar o estar mal, **no la implementes acá** — reportalo. Una regla duplicada en la API es peor que una regla ausente, porque las dos versiones se desincronizan.
 
 ## Antes de escribir: preguntá, no asumas
 

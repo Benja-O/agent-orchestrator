@@ -4,12 +4,17 @@
 > costo, formato de commits) viven en `CLAUDE.md`. Este archivo es exclusivamente referencia
 > técnica del codebase: arquitectura, convenciones, tipos, anti-patrones.
 >
-> **Estado a 2026-08-09: mayormente arquitectura *objetivo*, con una parte ya real.** El
-> Bloque 2 construyó `Orchestrator.LspServer` y su suite; el resto —grafo, agentes, CLI— sigue
-> siendo el contrato que el código deberá cumplir cuando se escriba, derivado de las decisiones
-> cerradas en `DECISIONS.md`. Se revisa otra vez al cierre del Bloque 3 del `ROADMAP.md`, cuando
-> el grafo corra end-to-end. Cualquier divergencia entre este archivo y el código que exista es
-> un bug de uno de los dos, y hay que resolverla explícitamente, no dejarla pasar.
+> **Estado a 2026-08-09: describe código real, salvo dos adaptadores.** El Bloque 2 construyó
+> `Orchestrator.LspServer`; el Bloque 3 construyó `Orchestrator.Domain`,
+> `Orchestrator.Application`, `Orchestrator.TestSupport` y `Orchestrator.Observability`, y el
+> grafo corre end-to-end contra fakes. Lo que sigue siendo contrato a cumplir y no descripción
+> son `Orchestrator.Agents` y `Orchestrator.Lsp` —los dos adaptadores que hablan con el mundo
+> exterior, Bloque 4— y `Orchestrator.Cli`, Bloque 5. Están marcados como tales en la tabla de
+> proyectos.
+>
+> **Esta es la revisión que el documento se había agendado al cierre del Bloque 3.** Cualquier
+> divergencia entre este archivo y el código es un bug de uno de los dos, y hay que resolverla
+> explícitamente, no dejarla pasar.
 
 ## 🏛️ Filosofía general
 
@@ -43,31 +48,39 @@ la máquina de estados sin gastar cuota del plan Pro (ADR-001).
    nombrado así.
    *Si algo quedó vivo:* `pwsh tools/kill-language-servers.ps1`.
 
-3. **El grafo se testea sin invocar un solo agente real.** `FakeAgentRunner` sirve respuestas
-   grabadas; `FakeLanguageServer` sirve diagnostics fijos. Ninguna suite de tests lanza
-   `claude -p` ni arranca un language server real.
+3. **El grafo se testea sin invocar un solo agente real.** `FakeAgentRunner` y
+   `FakeLanguageServer` comparten un `FakeWorkspace`, así que el agente muta el estado que el
+   gate reporta y una corrida testeada es una corrida que podría ocurrir (ADR-014). Ninguna
+   suite lanza `claude -p` ni arranca un language server real.
    Esta regla **existe por ADR-001**: el límite de 5 h del plan Pro se agota justo cuando más
    se necesita, depurando la máquina de estados. No es preferencia de estilo — es la
    diferencia entre poder iterar el grafo cien veces por día y no poder.
    *Verificable con:* la suite completa corre sin red, sin `claude` en el `PATH`, y en menos
-   de unos segundos. Si un test tarda minutos, está invocando algo real.
+   de unos segundos — **124 tests, ninguna suite por encima de un segundo, medido con `claude`
+   efectivamente sacado del `PATH`**. Si un test tarda minutos, está invocando algo real.
+   Además hay tests de arquitectura (`ArchitectureTests`, en `Orchestrator.Application.Tests`)
+   que fallan el build si aparece una implementación de `IAgentRunner` o
+   `ILanguageServerGateway` fuera de `Orchestrator.TestSupport`.
 
 4. **Prohibido `DateTime.Now` y `DateTime.UtcNow` fuera de adaptadores.** Todo acceso al
-   tiempo va por `IClock`. Acá importa concretamente por dos cosas: los timeouts de
-   subproceso (un agente colgado no puede bloquear la corrida para siempre) y la capacidad de
-   testear un loop de revisión que reintenta, sin esperar en tiempo real.
+   tiempo va por **`TimeProvider`**, la abstracción del BCL — no por una interfaz propia; ver
+   ADR-014, punto 6, para por qué se enmendó. Acá importa concretamente por dos cosas: los
+   timeouts de subproceso (un agente colgado no puede bloquear la corrida para siempre) y la
+   capacidad de testear un loop de revisión que reintenta, sin esperar en tiempo real. En la
+   suite el reloj es `SteppingTimeProvider`, que avanza un paso fijo por lectura.
 
 ## 📂 Estructura de proyectos y responsabilidades
 
 | Proyecto | Contenido | Depende de |
 |---|---|---|
-| `Orchestrator.Domain` | Modelo del grafo y del pipeline: `NodeId`, `GraphState`, `Diagnostic`, `TaskPlan`, `LayerScope`, `AgentResult`, las transiciones y sus predicados. | Nada |
-| `Orchestrator.Application` | `GraphRunner` (la máquina de estados), `SpecAnalyzer`, política del loop de revisión, límites de iteración y detección de no-progreso. | Domain |
-| `Orchestrator.Agents` | `ClaudeCodeAgentRunner`: implementa `IAgentRunner` invocando `claude -p` vía `Process`. Construcción de prompts, manejo de timeouts, parseo de la salida. | Domain |
-| `Orchestrator.Lsp` | Cliente del servidor MCP: lo lanza como proceso y consume sus tools. Implementa `ILanguageServerGateway`. Traduce diagnostics del contrato al tipo de dominio. | Domain |
-| **`Orchestrator.LspServer`** ✅ | **Existe.** El servidor MCP: host ASP.NET Core que expone las cinco tools de `docs/mcp-contract.md` por HTTP y es dueño de los dos language servers. Habla LSP con `StreamJsonRpc`. **No depende de `Domain`** — es agnóstico del proyecto que analiza (ADR-010, ADR-013). | Nada del repo |
-| `Orchestrator.Cli` | Host de consola: parseo de argumentos, wiring de dependencias, logging, código de salida. Es el único con `Main` del lado del orquestador. | Todos |
-| `Orchestrator.TestSupport` | `FakeAgentRunner`, `FakeLanguageServer`, `FakeClock`, builders de estado del grafo. **Solo lo referencian proyectos de test**, nunca uno de producción. | Domain |
+| **`Orchestrator.Domain`** ✅ | Modelo del grafo y del pipeline: `NodeId`, `RunId`, `Layer`, `LayerMap`, `GraphState`, `Diagnostic`, `DiagnosticSet`, `GateVerdict`, `TaskPlan`, `SpecDocument`, `Result<T>`, `GraphPolicy`, `ReviewPolicy`, los `RunEvent` y las interfaces `IAgentRunner` / `ILanguageServerGateway` / `IRunObserver`. | Nada |
+| **`Orchestrator.Application`** ✅ | `GraphRunner` (la máquina de estados), `GateEvaluator` (la política de `indexing`), `SpecParser`, `PlanParser`, `AgentPrompts`. | Domain |
+| `Orchestrator.Agents` ⬜ | *Bloque 4.* `ClaudeCodeAgentRunner`: implementa `IAgentRunner` invocando `claude -p` vía `Process`. Preparación del workspace, manejo de timeouts, lectura de la salida. | Domain |
+| `Orchestrator.Lsp` ⬜ | *Bloque 4.* Cliente del servidor MCP: lo lanza como proceso y consume sus tools. Implementa `ILanguageServerGateway`. Traduce diagnostics del contrato al tipo de dominio. | Domain |
+| **`Orchestrator.LspServer`** ✅ | El servidor MCP: host ASP.NET Core que expone las cinco tools de `docs/mcp-contract.md` por HTTP y es dueño de los dos language servers. Habla LSP con `StreamJsonRpc`. **No depende de `Domain`** — es agnóstico del proyecto que analiza (ADR-010, ADR-013). | Nada del repo |
+| **`Orchestrator.Observability`** ✅ | `JsonlRunObserver` y `ConsoleRunObserver`: las dos lecturas del mismo flujo de eventos (ADR-015). Existe como proyecto aparte para que escribir archivos quede fuera de `Application`. | Domain |
+| `Orchestrator.Cli` ⬜ | *Bloque 5.* Host de consola: parseo de argumentos, wiring de dependencias, código de salida. Es el único con `Main` del lado del orquestador. | Todos |
+| **`Orchestrator.TestSupport`** ✅ | `FakeWorkspace` (el escenario compartido), `FakeAgentRunner`, `FakeLanguageServer`, `SteppingTimeProvider`, `RecordingRunObserver`, builders de diagnostics. **Solo lo referencian proyectos de test**, nunca uno de producción. | Domain |
 
 Cada proyecto de producción tiene su `.Tests` correspondiente.
 
@@ -88,22 +101,43 @@ real de un fake, la regla de oro 3 se cumple sola.
 ## 🕸️ Modelo del grafo
 
 - **Nodo** — un paso del pipeline: un agente de capa (dominio, API .NET, React), el spec
-  analyzer, o una verificación contra el gate de LSP.
+  analyzer, o una verificación contra el gate de LSP. Los identificadores son
+  `spec-analysis`, `<capa>-implementation`, `<capa>-gate`, `completed` y `failed`.
 - **Arista condicional** — una transición gobernada por un predicado sobre `GraphState`. La
   arista característica del proyecto: *si el gate devuelve diagnostics de error, volver al
-  agente de la capa que los produjo, con los diagnostics como input; si no, avanzar.*
+  agente de la capa que los produjo, con los diagnostics como input; si no, avanzar.* Vive en
+  `ReviewPolicy.Decide`, como función pura, para poder ejercitarla sin agente ni gateway.
 - **Estado (`GraphState`)** — inmutable, se reemplaza en cada transición en vez de mutarse.
-  Lleva el plan de tareas, el nodo actual, el historial de intentos por nodo y los
-  diagnostics de la última verificación. Que sea inmutable es lo que permite loguear la
-  traza completa de la corrida sin copias defensivas, y es lo que hace la demo legible.
+  Lleva el plan de tareas, el nodo actual, el historial de intentos por nodo, el último
+  veredicto **por capa** y la traza de nodos visitados. Que sea inmutable es lo que permite
+  loguear la traza completa de la corrida sin copias defensivas, y es lo que hace la demo
+  legible.
+- **Atribución de capa (`LayerMap`)** — el gate se consulta siempre sobre el workspace
+  entero, no sobre la capa que acaba de trabajar, y el mapa de rutas decide a quién le vuelve
+  cada error. Es lo que existe porque el contrato MCP no trae campo `layer` (ADR-010), y es lo
+  que hace que la arista condicional tenga a dónde ir. El layout es fijo: `src/Domain/`,
+  `src/Api/`, `src/Frontend/`.
+  **Un diagnostic en un archivo que no cae en ninguna capa detiene la corrida**, no se
+  descarta: no hay agente al que devolvérselo, así que avanzar sería aprobar código roto.
 
 **Terminación — obligatoria, no opcional.** Todo ciclo del grafo tiene que poder terminar por
 tres vías, y las tres se implementan a mano porque no hay framework que las provea
 (ADR-003):
-- Límite máximo de iteraciones por nodo.
+- Límite máximo de iteraciones por nodo (`GraphPolicy.MaximumAttemptsPerNode`). Se comprueba
+  en dos lugares: en `ReviewPolicy`, que detiene la corrida antes de pagar el turno que ya
+  sabe que es el último, y al entrar al nodo, que es lo que vuelve demostrable la cota.
 - Detección de no-progreso: el agente devuelve el mismo conjunto de diagnostics dos veces
-  seguidas y no está avanzando.
+  seguidas y no está avanzando. Se compara `DiagnosticSet.Fingerprint()`, independiente del
+  orden. **Limitación conocida y escrita:** con `truncated: true` la huella solo cubre la
+  ventana visible, así que ahí el no-progreso es heurístico y quien respalda es el límite de
+  iteraciones.
 - Fallo terminal explícito, con estado y traza que expliquen dónde se trabó.
+
+**Hay una cuarta cota que ADR-003 no enumera y conviene tenerla presente:** el gate contestando
+`indexing` es "esperar y reconsultar", nunca aprobación — pero reconsultar sin techo es un
+cuelgue, que es exactamente lo que produjo el fallo silencioso del Bloque 2 (ADR-013). Vive en
+`GraphPolicy.MaximumIndexWaitAttempts`, y agotarla es un fallo terminal que lleva el
+`statusDetail` del propio servidor en la traza.
 
 Un loop de revisión sin límite contra `claude -p` consume la cuota del plan Pro en una sola
 corrida (ADR-001). La terminación es una restricción de costo antes que de elegancia.
@@ -120,9 +154,13 @@ Lo que ya está fijado por `DECISIONS.md`:
 - Los agentes acceden además a navegación (`definition`, `references`, `documentSymbol`) vía
   MCP (ADR-005). Los diagnostics son solo la mitad del valor de la capa LSP.
 
-Lo que **no** está decidido todavía y es decisión pendiente del `ROADMAP.md` (Bloque 1):
-la forma exacta del tipo, cómo se agrupan por capa, y cómo se recortan para caber en un
-prompt sin perder lo que importa.
+Lo que el Bloque 1 dejó decidido y el Bloque 3 implementó: la forma exacta del tipo está en
+`docs/mcp-contract.md` (ADR-010); el agrupamiento por capa lo hace `LayerMap` del lado del
+orquestador; y el recorte para el prompt ocurre dos veces —el servidor trunca por severidad y
+`AgentPrompts` acota otra vez, porque un agente al que se le entregan sesenta errores no
+arregla bien ninguno—. El tipo de dominio es `Diagnostic`, distinto del `DiagnosticItem` del
+contrato: la traducción la hace `Orchestrator.Lsp`, y es lo que impide que el grafo empiece a
+depender de la forma de cable.
 
 **Trampa conocida, a tener en cuenta al implementar:** un language server recién arrancado
 devuelve diagnostics incompletos mientras indexa. Consultarlo demasiado pronto da un **falso
@@ -179,10 +217,20 @@ ventana al grafo**, y la demo consiste en proyectarlo mientras el pipeline corre
 convierte en una decisión de producto, no de infraestructura: tiene que ser legible por una
 persona en vivo *y* parseable después.
 
-Como mínimo se registra: entrada y salida de cada nodo, el veredicto del gate con su conteo
-de diagnostics, cada iteración del loop de revisión con qué cambió respecto de la anterior, y
-la razón de terminación. El diseño concreto —qué campos, qué nivel de detalle, si hay una
-vista de consola aparte del JSONL— es decisión pendiente del `ROADMAP.md`.
+**El diseño está cerrado en ADR-015.** Once eventos tipados en `Orchestrator.Domain`, cada uno
+con dos lecturas que salen del mismo objeto: `Event`, el nombre estable que lee una máquina, y
+`Summary`, la línea que lee una persona. Que no sean dos objetos es lo que impide que la vista
+de consola y el archivo terminen describiendo corridas distintas.
+
+Se registra: arranque con el spec y sus identificadores, el plan con sus tareas por capa y los
+criterios que ninguna reclamó, entrada a cada nodo **con los `RN-nn` que esa capa está
+implementando**, invocación y retorno de cada agente, cada espera por indexado, cada veredicto
+del gate con su huella, **cada iteración del loop con qué resolvió y qué introdujo**, y la
+razón de terminación con la traza completa.
+
+Dos observadores en `Orchestrator.Observability` sobre la misma secuencia: `JsonlRunObserver`
+—`timestamp`, `run` y `event` siempre primero— y `ConsoleRunObserver`, que filtra las primeras
+esperas de indexado porque son rutina y muestra las siguientes porque dejan de serlo.
 
 ## 🚫 Anti-patrones prohibidos
 
@@ -195,5 +243,8 @@ vista de consola aparte del JSONL— es decisión pendiente del `ROADMAP.md`.
 | Confiar en que el agente dice que compiló | Es el problema que el proyecto existe para resolver | ADR-004 |
 | Un ciclo del grafo sin límite de iteraciones | Agota la cuota en una corrida | ADR-003 |
 | Consultar el gate antes de que el language server terminó de indexar | Falso verde: aprueba código que no compila | ADR-006 |
+| Reconsultar el gate mientras contesta `indexing`, sin techo de intentos | Esperar es obligatorio; esperar sin límite es un cuelgue indistinguible de un servidor muerto | ADR-013 |
+| Descartar un diagnostic cuyo archivo no cae en ninguna capa | No hay agente al que devolvérselo, así que avanzar es aprobar código roto | ADR-010 |
+| Que el grafo tome una decisión leyendo el texto que devolvió un agente | Es la superficie que no se puede testear; el veredicto lo da el gate, no el agente. Única excepción: el plan del spec analyzer | ADR-014 |
 | Editar a mano algo en `output/` para que el pipeline avance | `output/` es desechable por construcción; si hace falta tocarlo, el orquestador no está haciendo su trabajo | ADR-008 |
-| `DateTime.UtcNow` fuera de adaptadores | Vuelve no testeables los timeouts y los reintentos | Oro 4 |
+| `DateTime.UtcNow` fuera de adaptadores, o un reloj propio en vez de `TimeProvider` | Vuelve no testeables los timeouts y los reintentos | Oro 4 |

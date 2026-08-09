@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!--
+    The adapter side of the log. It depends on Domain because run events are part of the model
+    of a run, and it exists as its own project so that writing files stays out of
+    Orchestrator.Application.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Orchestrator.Domain\Orchestrator.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

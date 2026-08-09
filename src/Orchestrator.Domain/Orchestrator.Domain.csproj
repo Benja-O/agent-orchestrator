@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!--
+    No PackageReference on purpose. Golden rule 1 of AI.md: this project knows nothing about
+    Claude Code, about LSP, or about any process. Every dependency added here has to be
+    defended against that rule, so the empty list is the point.
+  -->
+
+</Project>
