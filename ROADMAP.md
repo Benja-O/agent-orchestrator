@@ -232,13 +232,15 @@ ningún punto pendiente.
 - **`AI.md` enmendó su regla de oro 4:** el reloj es `TimeProvider` del BCL, no un `IClock`
   propio. Un `IClock` de solo `UtcNow` no cubría la espera entre reconsultas del gate.
 
-**Un defecto encontrado en documentación propia, sin corregir todavía:** el encabezado de
-`specs/gestor-tareas.md` afirma que *"todo `CA-nn` cita al menos una `RN-nn` existente"*, y
-ADR-012 repite la afirmación — pero la tabla del propio spec tiene cinco criterios con `—` en
-la columna *Verifica*, y el texto los declara legítimos. El spec se contradice a sí mismo. El
-validador implementa la invariante que sí se sostiene —**ninguna cita apunta a una regla
-inexistente**, más identificadores únicos y correlativos— y la redacción de los dos documentos
-queda por arreglar.
+**Un defecto encontrado en documentación propia, y corregido.** El encabezado de
+`specs/gestor-tareas.md` afirmaba que *"todo `CA-nn` cita al menos una `RN-nn` existente"* y
+ADR-012 repetía la afirmación — pero la tabla del propio spec tiene cinco criterios con `—` en
+la columna *Verifica*, y su sección 6 los declara legítimos. El spec se contradecía a sí mismo,
+y el ADR sostenía la versión equivocada. Los dos documentos ahora enuncian la invariante que se
+sostiene y que además es la que puede romperse en silencio: **ninguna cita apunta a una regla
+inexistente**, más identificadores únicos y correlativos. Lo verifica `SpecParser` contra el
+spec real del repo, enlazado desde el `.csproj` de la suite. Encontrarlo al escribir el
+validador es lo que ADR-012 esperaba del formato.
 
 **Lo que quedó abierto, dicho:** deudas D9 (volver atrás re-invoca las capas posteriores),
 D10 (no-progreso es heurístico cuando el gate trunca) y D11 (el formato del plan vive en el

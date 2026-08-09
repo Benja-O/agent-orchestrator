@@ -2,7 +2,7 @@
 
 > **Qué es este documento.** La especificación de entrada del orquestador, bajo filosofía SDD. Describe **qué** debe hacer la aplicación y **por qué**, no cómo construirla: no nombra clases, endpoints, archivos ni estructura de proyectos. Esa descomposición es trabajo del Spec Analyzer, y adelantarla acá lo dejaría sin nada que analizar.
 >
-> **Convención de identificadores.** Las reglas de negocio se numeran `RN-nn` y los criterios de aceptación `CA-nn`. Los IDs son estables y se citan a lo largo del pipeline: el plan de tareas cita la regla que implementa, el log de la corrida muestra qué regla se está trabajando en qué capa, y la verificación final se corre contra la lista de criterios. **Todo `CA-nn` cita al menos una `RN-nn` existente** — es una invariante del propio spec, comprobable mecánicamente.
+> **Convención de identificadores.** Las reglas de negocio se numeran `RN-nn` y los criterios de aceptación `CA-nn`. Los IDs son estables y se citan a lo largo del pipeline: el plan de tareas cita la regla que implementa, el log de la corrida muestra qué regla se está trabajando en qué capa, y la verificación final se corre contra la lista de criterios. **Toda cita a una `RN-nn` apunta a una regla que existe** — es una invariante del propio spec, comprobable mecánicamente. No todos los criterios citan una regla: los que cubren funcionalidad básica no ejercitan ninguna, y eso es legítimo. Lo que nunca es legítimo es citar una regla que no está.
 
 ## 1. Propósito
 
