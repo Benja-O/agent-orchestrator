@@ -15,25 +15,26 @@
 
 ---
 
-## Estado (2026-08-07) — Bloques 0 y 1 cerrados; próximo: Bloque 2
+## Estado (2026-08-09) — Bloques 0, 1 y 2 cerrados; próximo: Bloque 3
 
-Andamiaje documental completo y las tres decisiones bloqueantes resueltas. `DECISIONS.md` tiene
-doce ADRs; el spec de entrada está en [specs/gestor-tareas.md](specs/gestor-tareas.md), el
-contrato del servidor MCP en [docs/mcp-contract.md](docs/mcp-contract.md) y las definiciones de
-los cuatro subagentes en [templates/agents/](templates/agents/). Todavía no hay una línea de
-código.
+**La capa LSP funciona contra servidores reales.** `src/Orchestrator.LspServer/` expone las cinco
+tools de [docs/mcp-contract.md](docs/mcp-contract.md) por HTTP, envolviendo Roslyn LSP y
+`typescript-language-server`. ADR-006 y ADR-010 pasaron a `Aceptada` con evidencia, y ADR-013
+cerró la última decisión abierta que quedaba del briefing sobre el stack.
 
-**El Bloque 1 cerró tres días antes de lo previsto**, lo que devuelve holgura a los dos bloques
-de riesgo (2 y 4). No se adelanta la fecha de nada: el margen se usa para el Bloque 2, que es
-donde está concentrado el riesgo técnico.
+**El Bloque 2 cerró cinco días antes de la fecha y sin usar el plan B.** El disparador de
+reversión a OmniSharp era el mié 13/08; no hizo falta. Con eso, **el riesgo técnico concentrado
+del proyecto (R3) está cerrado** y el margen acumulado —tres días del Bloque 1 más cinco de
+éste— queda disponible para el Bloque 4, que es donde ahora vive el riesgo real (cuota del plan
+Pro).
 
 **Plazo: vie 2026-08-07 → lun 2026-08-24 (17 días).** Es el condicionante que ordena todas
 las prioridades de abajo: hay tiempo para un pipeline que funcione de punta a punta sobre un
 artefacto chico, y no lo hay para nada más.
 
-**Lo próximo — Bloque 2.** Levantar Roslyn LSP y `typescript-language-server` detrás del
-servidor MCP y verificar el contrato contra diagnostics reales. Es el bloque que promueve
-ADR-006 y ADR-010 de `Propuesta` a `Aceptada`, o los corrige.
+**Lo próximo — Bloque 3.** El esqueleto del grafo y el Spec Analyzer, construidos contra
+`FakeAgentRunner` y `FakeLanguageServer`. Es lo que más se evalúa, y ahora se construye sabiendo
+exactamente qué forma tiene el veredicto que consume, porque existe.
 
 ---
 
@@ -43,7 +44,7 @@ ADR-006 y ADR-010 de `Propuesta` a `Aceptada`, o los corrige.
 |---|---|---|---|---|
 | **0** | vie 07/08 | Andamiaje documental (`CLAUDE.md`, `AI.md`, `DECISIONS.md`, `ROADMAP.md`, README stub) + `git init` | Los cinco documentos existen, las referencias cruzadas resuelven, commit inicial hecho | ✅ 07/08 |
 | **1** | sáb 08 – lun 10/08 | `specs/gestor-tareas.md` + contrato de tools del servidor MCP + scope de los subagentes | El spec está escrito en formato SDD, el contrato tiene firmas y formato de `Diagnostic` cerrados, y los cuatro subagentes están definidos — con sus tres ADRs | ✅ 07/08 |
-| **2** | mar 11 – vie 14/08 | Servidor MCP de LSP sobre Roslyn LSP + `typescript-language-server` | Una consulta manual al servidor devuelve diagnostics reales de un `.cs` roto a propósito, **y** una consulta de `definition` devuelve la ubicación correcta. ADR-006 pasa a `Aceptada` o se revierte a OmniSharp | ⬜ |
+| **2** | sáb 09/08 | Servidor MCP de LSP sobre Roslyn LSP + `typescript-language-server` | Una consulta manual al servidor devuelve diagnostics reales de un `.cs` roto a propósito, **y** una consulta de `definition` devuelve la ubicación correcta. ADR-006 pasa a `Aceptada` o se revierte a OmniSharp | ✅ 09/08 |
 | **3** | mié 12 – dom 16/08 | Esqueleto del grafo (estado, nodos, transiciones) + Spec Analyzer | El grafo corre end-to-end contra `FakeAgentRunner` y `FakeLanguageServer`, incluido el ciclo de revisión y las tres vías de terminación. La suite corre sin `claude` en el `PATH` | ⬜ |
 | **4** | lun 17 – vie 21/08 | Agentes de capa (dominio, API .NET, React) + loop de revisión contra diagnostics reales | Un error inyectado a propósito hace volver el grafo al agente de esa capa, y la siguiente iteración lo corrige. Visible en el log | ⬜ |
 | **5** | vie 21 – sáb 22/08 | Primera corrida completa: spec → app compilable | `output/` se genera de cero, la app compila, y el endpoint que intenta violar la invariante de ADR-009 la rechaza | ⬜ |
@@ -88,8 +89,11 @@ ADR-011, ADR-012). Quedan dos.
 
 | # | Decisión | Se resuelve en | Produce |
 |---|---|---|---|
-| 4 | **Estrategia de testing del propio orquestador** (no de la app generada): cómo se valida que el grafo y el loop de revisión funcionan | Bloque 3 | ADR-013 |
-| 5 | **Nivel de logging y observabilidad del grafo** para que la demo muestre el proceso con claridad | Bloque 3 (diseño) / Bloque 6 (pulido) | ADR-014 |
+| 4 | **Estrategia de testing del propio orquestador** (no de la app generada): cómo se valida que el grafo y el loop de revisión funcionan | Bloque 3 | ADR-014 |
+| 5 | **Nivel de logging y observabilidad del grafo** para que la demo muestre el proceso con claridad | Bloque 3 (diseño) / Bloque 6 (pulido) | ADR-015 |
+
+> Los números corrieron: ADR-013 se usó en el Bloque 2 para el lenguaje y la topología del
+> servidor MCP, que era la decisión que ADR-002 había dejado abierta "hasta el Bloque 2".
 
 Notas sobre el estado de cada una:
 
@@ -99,6 +103,11 @@ Notas sobre el estado de cada una:
   invocando nada real. Se le suma un caso concreto salido del Bloque 1: **el gate tiene que
   tratar `status: "indexing"` como "esperar", nunca como aprobación** (ADR-010), y eso se
   testea con `FakeLanguageServer`.
+  **El Bloque 2 le dejó el patrón ya probado de un lado:** `FakeLanguageServerSession` sirve
+  respuestas en forma de protocolo y toda la superficie de tools se ejercita contra él —
+  33 tests en 2 segundos, sin proceso, sin red y sin indexado. La pregunta que queda abierta es
+  la del otro lado, `FakeAgentRunner`, que es más difícil porque una respuesta de agente es
+  texto libre y no una estructura.
 - **#5** dejó de ser una decisión de infraestructura al cerrarse ADR-007: sin UI, el log es la
   única ventana al grafo y es lo que se proyecta en la demo. El Bloque 1 le agregó materia
   prima: los identificadores `RN-nn` / `CA-nn` del spec (ADR-012) hacen que el log pueda
@@ -125,13 +134,12 @@ invariante extra es superficie nueva donde el agente puede fallar por razones qu
 culpa del orquestador. *Mitigación:* el alcance de la app está congelado en ADR-009; ampliarlo
 requiere un ADR que lo justifique contra el cronograma.
 
-**R3 — La integración de Roslyn LSP resulta más difícil de lo previsto.** ADR-006 está en
-`Propuesta`, no verificado. Roslyn LSP se distribuye distinto que OmniSharp y su arranque
-desde un proceso .NET puede complicarse. *Mitigación:* el Bloque 3 no depende del Bloque 2
-(fakes), así que un atraso acá no bloquea el grafo; y el plan B —volver a OmniSharp— está
-escrito en el propio ADR. *Disparador:* si al mié 13/08 no hay diagnostics reales llegando,
-cambiar a OmniSharp y actualizar ADR-006 con la razón. El cierre anticipado del Bloque 1 da
-tres días extra de margen acá, que es donde más falta pueden hacer.
+**R3 — La integración de Roslyn LSP resulta más difícil de lo previsto.** ✅ **Cerrado el
+2026-08-09.** No se necesitó el plan B: el paquete se obtiene del feed público de Visual Studio,
+trae un ejecutable standalone, y `--stdio` funciona. ADR-006 pasó a `Aceptada` con la evidencia.
+Lo que efectivamente costó tiempo no fue Roslyn sino la deserialización de parámetros de
+JSON-RPC (ADR-013, última consecuencia) — un modo de fallo que no estaba en ninguna lista de
+riesgos porque es silencioso.
 
 **R5 — El agente headless corre sin las tools de LSP, en silencio.** Los servidores declarados
 en un `.mcp.json` con scope de proyecto **piden aprobación interactiva** la primera vez. En
@@ -140,7 +148,12 @@ sin el servidor MCP y el pipeline degrada a generación a ciegas — precisament
 proyecto existe para evitar. Sería un fallo caro de diagnosticar porque todo *parece* funcionar.
 *Mitigación:* el orquestador agrega el servidor a `enabledMcpjsonServers` en el `settings.json`
 del workspace generado, y **verifica al arrancar que las tools están disponibles** en vez de
-asumirlo (fallar rápido, `AI.md`). Se prueba en el Bloque 2, junto con el servidor real.
+asumirlo (fallar rápido, `AI.md`). El endpoint `/health` del servidor MCP existe para esa
+verificación.
+*Se movió al Bloque 4.* Comprobarlo de verdad exige lanzar `claude -p`, y la regla de costo del
+Bloque 2 lo prohibía explícitamente. El Bloque 4 corre agentes reales de todos modos: ahí se
+paga una sola vez. **Sigue siendo el riesgo abierto más caro de diagnosticar del proyecto**, y
+la primera cosa a comprobar del bloque, no la última.
 
 **R4 — El gate verifica compilación, no corrección.** Una regla de negocio puede estar
 ausente y el código compilar perfecto (ADR-004, consecuencia final). El proyecto ya lo tiene
@@ -164,10 +177,61 @@ retomar si el proyecto continuara.
 | D4 | Sin gate de tests sobre la app generada, solo gate de compilación | ADR-004 (alternativa descartada) | Fuera del alcance de 2.5 semanas; es la extensión natural del gate |
 | D5 | El alcance de archivos por agente es una convención del prompt, no una barrera | ADR-011 | **Tiene fecha: el hook `PreToolUse` se implementa en el Bloque 4.** Hasta entonces, un agente puede escribir fuera de su capa y nada lo detiene |
 | D6 | Reabrir una tarea completada abriría un hueco en RN-01 y queda fuera del spec | `specs/gestor-tareas.md`, fuera de alcance | Solo si se amplía el artefacto de juguete, cosa que ADR-009 desaconseja |
+| D7 | `workspaceSymbol` puede volver vacío mientras el índice de símbolos se calienta, y el contrato no distingue eso de "no existe" | Bloque 2, ADR-010 | Si un agente de capa concluye que una entidad no existe cuando sí existe. El gate no usa esta tool, así que no bloquea el pipeline |
+| D8 | El servidor MCP está fijado a `win-x64`: el paquete de Roslyn LSP es específico por RID | Bloque 2, ADR-006 | Si el proyecto tiene que correr en otra plataforma. Es una línea del `.csproj`, no un rediseño |
 
 ---
 
 ## Historial completado
+
+### ✅ Bloque 2 — La capa LSP detrás del servidor MCP (2026-08-09)
+
+El bloque de riesgo técnico concentrado, cerrado cinco días antes de la fecha y sin usar el plan
+B. La primera línea de código del proyecto, y la que decide si el resto tiene sentido.
+
+**Criterio de salida, cumplido y superado.** Se pedían diagnostics reales de un `.cs` roto **y**
+un `definition` correcto. Se obtuvo eso y además lo mismo del lado TypeScript:
+
+| | C# — Roslyn | TypeScript — `typescript-language-server` |
+|---|---|---|
+| `diagnostics` | `CS1061 'Tarea' does not contain a definition for 'Cerrar'` en `Api/TareasController.cs:27` | `2339` en `src/tareasView.ts:13` |
+| `definition` | `Domain/Tarea.cs:19`, **cruzando la frontera entre dos proyectos**, con firma `bool Tarea.Completar(IReadOnlyList<Tarea> prerequisitos)` | `src/tarea.ts:11`, con firma |
+| `status` en frío | `indexing`, no una lista vacía | `indexing`, no una lista vacía |
+
+Reproducible con `dotnet run --project src/Orchestrator.LspServer.ManualVerification`, que
+arranca los servidores contra los fixtures rotos a propósito y comprueba las respuestas.
+
+**Las dos decisiones abiertas, cerradas.** ADR-013: el servidor MCP en .NET con el SDK oficial,
+como proceso propio dueño de los language servers, hablando LSP con `StreamJsonRpc`. ADR-006 y
+ADR-010 promovidos a `Aceptada` con la evidencia escrita, no con una afirmación.
+
+**Tres hallazgos que ningún documento anticipaba:**
+
+1. **El modo de fallo real de esta integración es el silencio.** LSP pasa *un* objeto como todo
+   el juego de parámetros, y JSON-RPC por defecto mapea propiedades a parámetros por nombre. Sin
+   `UseSingleObjectParameterDeserialization`, StreamJsonRpc rechaza `workspace/configuration` —
+   y Roslyn no falla: anota el error en su cola, nunca termina de cargar la solución, y el
+   contrato contesta `indexing` para siempre sin que nada diga por qué. De ahí salió
+   `--LspServer:TraceProtocol=true`: la única forma de distinguir *"no lo mandó"* de *"no lo
+   enganchamos"*.
+2. **Hay una segunda vía al falso verde y no tiene que ver con el timing: la normalización de
+   rutas.** Nosotros emitimos `file:///F:/x/a.ts`, `typescript-language-server` contesta sobre
+   `file:///f%3A/x/a.ts`. Como texto son archivos distintos, así que los diagnostics quedan
+   archivados bajo una clave que nadie consulta **y el archivo parece limpio**. Generalizado
+   como anti-patrón en `AI.md`, con test de regresión.
+3. **El idioma de los diagnostics es una decisión de producto, no cosmética.** Roslyn los emite
+   en el idioma de la máquina; esos mensajes no se quedan en el log, se pegan en el prompt del
+   agente que tiene que arreglar el código. Se fijan con
+   `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`.
+
+**Verificación hecha:** la suite corre en 2 segundos, 33 tests, sin red, sin `claude` en el
+`PATH` y sin arrancar ningún language server — la regla de oro 3 de `AI.md` verificada como
+está escrita, no asumida. El arnés que sí arranca servidores reales vive fuera de la suite y se
+llama para que eso sea evidente.
+
+**Lo que quedó abierto, dicho:** R5 (aprobación de `.mcp.json` en headless) se movió al Bloque 4
+porque comprobarlo exige `claude -p` y la regla de costo del bloque lo prohibía; deudas D7
+(`workspaceSymbol` en frío) y D8 (fijado a `win-x64`).
 
 ### ✅ Bloque 1 — Spec, contrato MCP y scope de subagentes (2026-08-07)
 

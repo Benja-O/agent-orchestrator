@@ -4,12 +4,12 @@
 > costo, formato de commits) viven en `CLAUDE.md`. Este archivo es exclusivamente referencia
 > técnica del codebase: arquitectura, convenciones, tipos, anti-patrones.
 >
-> **Estado a 2026-08-07: este documento describe la arquitectura *objetivo*, no una
-> existente.** El repo todavía no tiene código. Lo que sigue es el contrato que el código
-> deberá cumplir cuando se escriba, derivado de las decisiones ya cerradas en `DECISIONS.md`.
-> Se revisa al cierre del Bloque 3 del `ROADMAP.md`, cuando el grafo corra end-to-end y haya
-> algo real que documentar. Cualquier divergencia entre este archivo y el código que exista
-> es un bug de uno de los dos, y hay que resolverla explícitamente, no dejarla pasar.
+> **Estado a 2026-08-09: mayormente arquitectura *objetivo*, con una parte ya real.** El
+> Bloque 2 construyó `Orchestrator.LspServer` y su suite; el resto —grafo, agentes, CLI— sigue
+> siendo el contrato que el código deberá cumplir cuando se escriba, derivado de las decisiones
+> cerradas en `DECISIONS.md`. Se revisa otra vez al cierre del Bloque 3 del `ROADMAP.md`, cuando
+> el grafo corra end-to-end. Cualquier divergencia entre este archivo y el código que exista es
+> un bug de uno de los dos, y hay que resolverla explícitamente, no dejarla pasar.
 
 ## 🏛️ Filosofía general
 
@@ -26,12 +26,22 @@ la máquina de estados sin gastar cuota del plan Pro (ADR-001).
    `Diagnostic` y `AgentResult`, no sobre stdout ni sobre JSON-RPC.
    *Verificable con:* `grep -rn "System.Diagnostics.Process\|LanguageServer" Orchestrator.Domain Orchestrator.Application` → debe dar cero.
 
-2. **Todo I/O de subproceso vive en `Orchestrator.Agents`; todo I/O de protocolo LSP/MCP vive
-   en `Orchestrator.Lsp`.** `Process.Start` aparece en un único lugar del repo. Los ciclos de
-   vida de procesos externos (la CLI, los dos language servers, el servidor MCP) se
-   administran ahí, con apagado determinista — un language server huérfano tras una corrida
-   fallida es un bug, no un detalle.
-   *Verificable con:* `grep -rn "Process.Start" --include=*.cs` → una sola ubicación fuera de tests.
+2. **Todo I/O de subproceso vive en los adaptadores, y en ningún otro lado.** `Process.Start`
+   aparece en exactamente dos proyectos, cada uno dueño de los procesos que lanza:
+   `Orchestrator.Agents` lanza la CLI de Claude Code; `Orchestrator.LspServer` lanza los dos
+   language servers. `Orchestrator.Lsp` lanza el servidor MCP y lo consulta como cliente.
+   La jerarquía es orquestador → servidor MCP → language servers, y la razón de que no sea
+   plana está en ADR-013: el que sostiene las conexiones LSP tiene que ser el que contesta las
+   tool calls.
+   El apagado es determinista en los tres niveles — un language server huérfano tras una
+   corrida fallida es un bug, no un detalle: mantiene handles sobre `output/`, que ADR-008
+   exige poder borrar y regenerar de cero.
+   *Verificable con:* `grep -rn "Process.Start" --include=*.cs src/` → en proyectos de
+   producción, solo `Orchestrator.Agents`, `Orchestrator.Lsp` y `Orchestrator.LspServer`. El
+   arnés `Orchestrator.LspServer.ManualVerification` también lanza procesos y aparece en el
+   grep: no es producción ni test, es la verificación manual del Bloque 2, y por eso está
+   nombrado así.
+   *Si algo quedó vivo:* `pwsh tools/kill-language-servers.ps1`.
 
 3. **El grafo se testea sin invocar un solo agente real.** `FakeAgentRunner` sirve respuestas
    grabadas; `FakeLanguageServer` sirve diagnostics fijos. Ninguna suite de tests lanza
@@ -54,11 +64,20 @@ la máquina de estados sin gastar cuota del plan Pro (ADR-001).
 | `Orchestrator.Domain` | Modelo del grafo y del pipeline: `NodeId`, `GraphState`, `Diagnostic`, `TaskPlan`, `LayerScope`, `AgentResult`, las transiciones y sus predicados. | Nada |
 | `Orchestrator.Application` | `GraphRunner` (la máquina de estados), `SpecAnalyzer`, política del loop de revisión, límites de iteración y detección de no-progreso. | Domain |
 | `Orchestrator.Agents` | `ClaudeCodeAgentRunner`: implementa `IAgentRunner` invocando `claude -p` vía `Process`. Construcción de prompts, manejo de timeouts, parseo de la salida. | Domain |
-| `Orchestrator.Lsp` | Cliente del servidor MCP y administración del ciclo de vida de los language servers. Implementa `ILanguageServerGateway`. Traduce diagnostics del protocolo al tipo de dominio. | Domain |
-| `Orchestrator.Cli` | Host de consola: parseo de argumentos, wiring de dependencias, logging, código de salida. Es el único con `Main`. | Todos |
+| `Orchestrator.Lsp` | Cliente del servidor MCP: lo lanza como proceso y consume sus tools. Implementa `ILanguageServerGateway`. Traduce diagnostics del contrato al tipo de dominio. | Domain |
+| **`Orchestrator.LspServer`** ✅ | **Existe.** El servidor MCP: host ASP.NET Core que expone las cinco tools de `docs/mcp-contract.md` por HTTP y es dueño de los dos language servers. Habla LSP con `StreamJsonRpc`. **No depende de `Domain`** — es agnóstico del proyecto que analiza (ADR-010, ADR-013). | Nada del repo |
+| `Orchestrator.Cli` | Host de consola: parseo de argumentos, wiring de dependencias, logging, código de salida. Es el único con `Main` del lado del orquestador. | Todos |
 | `Orchestrator.TestSupport` | `FakeAgentRunner`, `FakeLanguageServer`, `FakeClock`, builders de estado del grafo. **Solo lo referencian proyectos de test**, nunca uno de producción. | Domain |
 
 Cada proyecto de producción tiene su `.Tests` correspondiente.
+
+Además, fuera del árbol de producción:
+
+| Proyecto / carpeta | Para qué |
+|---|---|
+| `Orchestrator.LspServer.ManualVerification` | La verificación manual del Bloque 2, en un comando. **Arranca language servers reales, así que no es un test y no está en la suite** (regla de oro 3). Es la evidencia reproducible del criterio de salida. |
+| `fixtures/` | Código roto a propósito —un `.cs` y un `.ts`— contra el que se verifica la capa LSP. No lo compila nadie más. |
+| `tools/` | Scripts de operación. Hoy: matar language servers que hayan quedado vivos. |
 
 ### La regla de dependencias, dicha al revés
 `Orchestrator.Application` conoce `IAgentRunner` e `ILanguageServerGateway` (interfaces que
@@ -109,6 +128,14 @@ prompt sin perder lo que importa.
 devuelve diagnostics incompletos mientras indexa. Consultarlo demasiado pronto da un **falso
 verde** — el gate aprueba código que no compila, que es peor que no tener gate. Hay que
 esperar la señal de proyecto cargado antes de confiar en la primera respuesta (ADR-006).
+
+**El Bloque 2 encontró una segunda vía al mismo falso verde, y conviene tenerla presente
+porque no se parece a la primera: la normalización de rutas.** Los dos extremos escriben la
+misma ruta distinto —`file:///F:/x/a.ts` contra `file:///f%3A/x/a.ts`— y comparadas como texto
+son archivos distintos. Los diagnostics de un archivo quedan archivados bajo una clave que
+nadie consulta y **el archivo parece limpio**. La lección general: *cualquier* punto donde una
+identidad de archivo se compara como string es un lugar donde puede nacer un falso verde. Toda
+conversión pasa por `WorkspacePaths`, y hay test de regresión.
 
 ## 🛠️ Convenciones de estilo
 
@@ -161,7 +188,8 @@ vista de consola aparte del JSONL— es decisión pendiente del `ROADMAP.md`.
 
 | Anti-patrón | Por qué | Regla |
 |---|---|---|
-| `Process.Start` fuera de `Orchestrator.Agents` / `Orchestrator.Lsp` | Rompe la testeabilidad del grafo | Oro 2 |
+| `Process.Start` fuera de `Orchestrator.Agents` / `Orchestrator.Lsp` / `Orchestrator.LspServer` | Rompe la testeabilidad del grafo | Oro 2 |
+| Comparar rutas de archivo como strings sin pasar por `WorkspacePaths` | Dos escrituras de la misma ruta se leen como archivos distintos, y un archivo con errores parece limpio | ADR-010 |
 | Un test que invoca `claude -p` o un language server real | Consume cuota del plan Pro y vuelve la suite lenta e inestable | Oro 3 |
 | `ANTHROPIC_API_KEY` en cualquier forma | La facturación tiene que correr contra la suscripción | ADR-001 |
 | Confiar en que el agente dice que compiló | Es el problema que el proyecto existe para resolver | ADR-004 |

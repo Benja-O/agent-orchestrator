@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>Orchestrator.LspServer</RootNamespace>
+    <UserSecretsId>orchestrator-lsp-server</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.1.0" />
+    <PackageReference Include="StreamJsonRpc" Version="2.25.29" />
+  </ItemGroup>
+
+  <!--
+    The Roslyn language server is a self-contained executable shipped inside a
+    runtime-identifier-specific NuGet package on the Visual Studio feed (see NuGet.config).
+    PackageDownload puts it in the global packages folder without referencing any of its
+    assemblies: we launch it as a process, we do not compile against it.
+
+    The payload is ~140 MB, so it is deliberately NOT copied to the output directory. The
+    resolved path is baked into the runtimeconfig and read at startup; configuration
+    (Roslyn:ExecutablePath) overrides it.
+  -->
+  <PropertyGroup>
+    <RoslynLanguageServerVersion>5.4.0-2.26179.14</RoslynLanguageServerVersion>
+    <RoslynLanguageServerRuntimeIdentifier>win-x64</RoslynLanguageServerRuntimeIdentifier>
+    <RoslynLanguageServerPackageId>Microsoft.CodeAnalysis.LanguageServer.$(RoslynLanguageServerRuntimeIdentifier)</RoslynLanguageServerPackageId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageDownload Include="$(RoslynLanguageServerPackageId)" Version="[$(RoslynLanguageServerVersion)]" />
+  </ItemGroup>
+
+  <Target Name="ResolveRoslynLanguageServerDirectory" BeforeTargets="GenerateBuildRuntimeConfigurationFiles">
+    <PropertyGroup>
+      <RoslynLanguageServerDirectory>$([MSBuild]::NormalizeDirectory('$(NuGetPackageRoot)', '$(RoslynLanguageServerPackageId.ToLowerInvariant())', '$(RoslynLanguageServerVersion)', 'content', 'LanguageServer', '$(RoslynLanguageServerRuntimeIdentifier)'))</RoslynLanguageServerDirectory>
+    </PropertyGroup>
+    <ItemGroup>
+      <RuntimeHostConfigurationOption Include="Orchestrator.LspServer.RoslynLanguageServerDirectory"
+                                      Value="$(RoslynLanguageServerDirectory)" />
+    </ItemGroup>
+  </Target>
+
+</Project>

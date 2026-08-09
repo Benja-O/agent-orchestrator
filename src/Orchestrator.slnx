@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="Orchestrator.LspServer.ManualVerification/Orchestrator.LspServer.ManualVerification.csproj" />
+  <Project Path="Orchestrator.LspServer.Tests/Orchestrator.LspServer.Tests.csproj" />
+  <Project Path="Orchestrator.LspServer/Orchestrator.LspServer.csproj" />
+</Solution>

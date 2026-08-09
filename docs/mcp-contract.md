@@ -2,7 +2,9 @@
 
 > **Qué es este documento.** La interfaz entre el servidor MCP que envuelve los language servers y sus dos consumidores. Es un contrato: lo implementa `Orchestrator.Lsp` de un lado y lo consumen los agentes de capa del otro. El **porqué** de cada decisión vive en `DECISIONS.md` (ADR-004, ADR-005, ADR-006, ADR-010); acá va el **qué**.
 >
-> **Estado a 2026-08-08: diseño en papel.** Nada de esto se probó todavía contra servidores reales — el Bloque 2 del `ROADMAP.md` es exactamente eso. Las firmas pueden cambiar; los cambios se registran actualizando ADR-010, no reescribiendo la historia.
+> **Estado a 2026-08-09: implementado y verificado contra los dos servidores reales.** Lo implementa `src/Orchestrator.LspServer/`. Las firmas del diseño en papel se sostuvieron; se agregó el campo opcional `statusDetail` y un endpoint `/health` fuera del contrato MCP, ambos registrados en ADR-010.
+>
+> **Para verlo funcionar:** `dotnet run --project src/Orchestrator.LspServer.ManualVerification`. Arranca el servidor sobre los fixtures rotos a propósito de `fixtures/`, consulta las cinco tools y comprueba las respuestas. Arranca language servers reales, así que no es parte de la suite de tests (`AI.md`, regla de oro 3).
 
 ## Los dos consumidores
 
@@ -59,6 +61,7 @@ diagnostics(scope: string) -> DiagnosticsResponse
 // Respuesta
 {
   "status": "ready",        // "ready" | "indexing"
+  "statusDetail": null,     // presente solo con "indexing": qué se está esperando
   "total": 3,               // diagnostics que existen en el scope
   "truncated": false,       // true si items < total
   "items": [
@@ -84,6 +87,34 @@ Por eso la respuesta separa las dos situaciones de forma que no se puedan confun
 - `status: "indexing"` significa **todavía no sé**, y el contenido de `items` no es concluyente.
 
 El orquestador trata `indexing` como "esperar y reconsultar", nunca como aprobación. Es una obligación del consumidor, y se testea con `FakeLanguageServer`.
+
+**Si algún servidor del scope está indexando, la respuesta entera es `indexing`**, aunque el otro ya esté listo. Un veredicto parcial leído como completo es un falso verde.
+
+##### Cómo se decide `status`, servidor por servidor
+
+Verificado en el Bloque 2. **En ningún caso hay un temporizador**: un `sleep` estimado es exactamente cómo un gate termina aprobando código roto.
+
+| Servidor | Señal de que se puede confiar |
+|---|---|
+| Roslyn | La notificación `workspace/projectInitializationComplete`, que emite al terminar de cargar la solución |
+| `typescript-language-server` | No tiene fase de carga equivalente y no soporta *pull* de diagnostics: la garantía es por documento, esperando su primera publicación de `textDocument/publishDiagnostics` |
+
+##### `statusDetail`
+
+Opcional; presente solo cuando `status` es `"indexing"`. Dice **qué** se está esperando:
+
+```jsonc
+{ "status": "indexing", "total": 0, "truncated": false, "items": [],
+  "statusDetail": "Roslyn is loading the solution 'BrokenCSharp.slnx'" }
+```
+
+No estaba en el diseño en papel. Se agregó durante el Bloque 2 por una razón concreta: un `indexing` eterno y mudo es indistinguible de un servidor colgado, y un estado que no se puede diagnosticar termina siendo un estado que alguien decide ignorar.
+
+##### La otra vía al falso verde: las rutas
+
+Los dos extremos no escriben igual la misma ruta de Windows. Nosotros emitimos `file:///F:/proyecto/src/tarea.ts`; `typescript-language-server` contesta sobre `file:///f%3A/proyecto/src/tarea.ts`.
+
+Comparadas como texto son archivos distintos, y el daño es preciso: los diagnostics publicados quedan bajo una clave que nadie consulta y **el archivo parece limpio**. Es el mismo falso verde de `status`, llegando por normalización en vez de por timing. Toda conversión pasa por un único lugar (`WorkspacePaths`) y tiene test de regresión.
 
 #### Truncado y orden
 
@@ -179,6 +210,8 @@ workspaceSymbol(query: string) -> SymbolsResponse
 
 Misma forma de respuesta que `documentSymbol`, con `filePath` en cada item y sin anidamiento. Es el tool que resuelve *"¿dónde está la entidad Tarea?"* sin obligar al agente a recorrer el árbol de directorios.
 
+> **Limitación conocida.** Un language server puede reportar el workspace como cargado mientras su índice de símbolos todavía se arma, y una consulta temprana vuelve vacía — indistinguible, en el contrato, de *"ese símbolo no existe"*. Es la misma clase de problema que `status` resuelve para `diagnostics`, sin una señal equivalente disponible. **El gate no depende de esta tool**, así que no bloquea el pipeline; el consumidor real es un agente de capa, que puede reintentar. Registrado como deuda D7 en `ROADMAP.md`.
+
 ## Por qué cuatro tools de navegación y no solo `diagnostics`
 
 Porque `diagnostics` solo es la mitad del valor de la capa LSP, y la mitad que un `dotnet build` también daría. ADR-004 dejó escrito el criterio de falsación: **si al final del proyecto la capa LSP terminó exponiendo únicamente diagnostics, esto es un `dotnet build` caro y la decisión no se sostiene.** `definition`, `references`, `documentSymbol` y `workspaceSymbol` son lo que hace que el agente pueda preguntar en vez de asumir, y son la parte del contrato que hay que defender en la entrevista.
@@ -197,4 +230,16 @@ La distinción es la misma que hace `AI.md` para el orquestador: un archivo que 
 
 ## Ciclo de vida
 
-`Orchestrator.Lsp` administra tres procesos: el servidor MCP y los dos language servers que envuelve. Arrancan al preparar el workspace y se apagan de forma determinista al terminar la corrida, exitosa o no. **Un language server huérfano tras una corrida fallida es un bug**, no un detalle: mantiene abiertos handles sobre `output/`, que ADR-008 exige poder borrar y regenerar de cero.
+Los procesos se anidan: **el orquestador lanza el servidor MCP, y el servidor MCP es dueño de los dos language servers** (ADR-013 — el que sostiene las conexiones LSP tiene que ser el que contesta las tool calls). Arrancan al preparar el workspace y se apagan de forma determinista al terminar la corrida, exitosa o no. **Un language server huérfano tras una corrida fallida es un bug**, no un detalle: mantiene abiertos handles sobre `output/`, que ADR-008 exige poder borrar y regenerar de cero. Red de seguridad manual: `pwsh tools/kill-language-servers.ps1`.
+
+Los language servers arrancan **en segundo plano**, no durante el arranque del host HTTP: cargar una solución tarda segundos, y la respuesta honesta durante esos segundos es `status: "indexing"` — que requiere que el servidor ya esté contestando para poder decirla.
+
+## `/health` — fuera del contrato MCP
+
+```jsonc
+// GET /health
+{ "workspaceRoot": "F:/.../output",
+  "languageServers": [ { "source": "roslyn", "status": "ready", "detail": "ready" } ] }
+```
+
+No es una tool y los agentes no lo usan. Existe para que el orquestador pueda **verificar** al arrancar que la capa LSP está viva —en vez de asumirlo (`AI.md`, fallar rápido)— sin abrir una sesión MCP para preguntarlo.

@@ -30,9 +30,10 @@
 
 | ADR | Título corto | Área | Estado |
 |---|---|---|---|
+| ADR-013 | El servidor MCP en .NET, como proceso propio dueño de los language servers | LSP / Stack | Aceptada |
 | ADR-012 | Formato del spec SDD: markdown humano con identificadores estables | Spec / Entrada | Aceptada |
 | ADR-011 | Scope de los subagentes de capa: tools, modelo, límites y alcance de archivos | Agentes / Costo | **Propuesta** |
-| ADR-010 | Contrato del servidor MCP de LSP: tools, transporte HTTP y formato de `Diagnostic` | LSP / Integración | **Propuesta** |
+| ADR-010 | Contrato del servidor MCP de LSP: tools, transporte HTTP y formato de `Diagnostic` | LSP / Integración | Aceptada |
 | ADR-009 | Artefacto de juguete: gestor de tareas con dependencias, no un CRUD vacío | Alcance / Validación | Aceptada |
 | ADR-008 | Dos repos separados: el orquestador y la app que genera | Entrega / Repositorio | Aceptada |
 | ADR-007 | El spec entra por argumento de CLI; sin UI ni persistencia | Interfaz / Alcance | Aceptada |
@@ -44,6 +45,46 @@
 | ADR-001 | Claude Code CLI headless (`claude -p`), no la API de Anthropic | Agentes / Costo | Aceptada |
 
 ---
+
+## ADR-013 — El servidor MCP en .NET, como proceso propio dueño de los language servers
+**Fecha:** 2026-08-09
+**Estado:** Aceptada
+**ADRs relacionados:** ADR-002 (dejó esta decisión explícitamente abierta "hasta el Bloque 2"), ADR-005 (por qué hay un servidor MCP), ADR-010 (qué contrato implementa), ADR-006 (qué language servers envuelve).
+
+### Contexto
+ADR-002 eligió .NET para el orquestador y dejó abierto el lenguaje del servidor MCP, con un argumento correcto: *"es un proceso separado que habla un protocolo, no una dependencia de compilación"*. La decisión se aplazó hasta tener el dato que faltaba —qué SDK de MCP hace el trabajo más simple— y ese dato apareció al empezar el Bloque 2.
+
+Junto con el lenguaje había que cerrar dos cosas que ADR-010 dejó implícitas y que el código obligó a explicitar: **qué proceso es dueño de los language servers** y **con qué librería se les habla LSP**.
+
+### Decisión
+
+**1. El servidor MCP se escribe en .NET**, con el SDK oficial `ModelContextProtocol` 2.1.0 y `ModelContextProtocol.AspNetCore` 2.1.0, que da el transporte HTTP que ADR-010 exige sin adaptadores intermedios. Vive en `src/Orchestrator.LspServer/`.
+
+No hay ninguna ventaja que compense traer una segunda toolchain: el SDK de .NET es de primera clase (lo mantiene Microsoft junto con Anthropic), y mantener un solo lenguaje deja las convenciones de `AI.md` valiendo en todo el repo.
+
+**2. El servidor MCP es un proceso propio y es el dueño de los dos language servers.** `Orchestrator.Lsp` —del lado del orquestador— lo lanza y lo consulta como cliente MCP.
+
+Esto **enmienda la consecuencia de ADR-010** que decía "tres procesos que administrar en `Orchestrator.Lsp`". No pueden ser tres procesos administrados desde ahí: el que sostiene las conexiones LSP es quien contesta las tool calls, y ése es el servidor MCP. La jerarquía real es orquestador → servidor MCP → los dos language servers. La obligación de apagado determinista no cambia de dueño, cambia de lugar.
+
+Se consideró **hospedarlo in-process** dentro del CLI (Kestrel en el proceso del orquestador). Habría dado una garantía más fuerte de que el gate y el agente ven lo mismo —serían el mismo objeto, no el mismo servidor— y un proceso menos que apagar. Se descartó por dos razones: mete ASP.NET Core dentro de `Orchestrator.Cli`, y sobre todo **el Bloque 2 tenía que poder verificarse a mano antes de que el orquestador existiera**. Un servidor que se puede arrancar solo y consultar solo es más fácil de depurar, y depurarlo fue exactamente el trabajo de este bloque.
+
+**3. El cliente LSP es `StreamJsonRpc`, con los tipos del protocolo escritos a mano.**
+
+El candidato obvio era `OmniSharp.Extensions.LanguageClient`, que da modelos LSP tipados. Se descartó con un dato: **su último release es de septiembre de 2023.** Es una librería distinta del servidor `omnisharp-roslyn` que ADR-006 descartó, pero viene de la misma organización y está igual de detenida — construir la pieza central del proyecto sobre eso reproduce el problema que ADR-006 quiso evitar, y habría que defenderlo en la entrevista.
+
+`StreamJsonRpc` es de Microsoft, está activa, y `HeaderDelimitedMessageHandler` da el framing `Content-Length` de LSP directamente. El argumento que cierra la discusión: **el propio Roslyn LSP la trae adentro** (`StreamJsonRpc.dll` está en su payload), así que los dos extremos del pipe hablan la misma implementación de JSON-RPC. El costo es tipar a mano los mensajes que usamos, que son pocos — y los métodos custom de Roslyn (`solution/open`, `workspace/projectInitializationComplete`) había que declararlos a mano con cualquier librería.
+
+### Alternativas
+- **TypeScript/Node para el servidor MCP** → descartado. El SDK de MCP en TS es el de referencia y el ecosistema de language servers vive más cerca de Node, pero la mitad difícil del problema es C#, y partir el sistema en dos lenguajes para ahorrar nada de fricción no se justifica.
+- **Python** → descartado por lo mismo, con menos argumentos a favor todavía.
+- **Servidor MCP hospedado in-process en el CLI** → descartado arriba, con la razón. Es la alternativa que más cerca estuvo.
+- **`OmniSharp.Extensions.LanguageClient`** → descartado arriba, con la fecha.
+- **Un cliente LSP escrito desde cero sobre `Stream`** → descartado: JSON-RPC con correlación de ids, cancelación y manejo de errores es exactamente lo que `StreamJsonRpc` ya resuelve bien.
+
+### Consecuencias
+- **`Process.Start` aparece ahora en dos proyectos**, no en uno: `Orchestrator.Agents` (la CLI de Claude Code) y `Orchestrator.LspServer` (los language servers). La regla de oro 2 de `AI.md` se actualizó para decirlo. Lo que no cambia es lo que la regla protege: `Domain` y `Application` siguen sin conocer ningún proceso.
+- **El servidor MCP no depende de `Orchestrator.Domain`.** Es agnóstico del proyecto que analiza, como ADR-010 pidió al sacarle el campo `layer`. Eso lo vuelve reutilizable y, más concretamente, testeable solo.
+- **La trampa de `UseSingleObjectParameterDeserialization`.** LSP pasa **un** objeto como todo el juego de parámetros; JSON-RPC por defecto mapea las propiedades del objeto a parámetros por nombre. Sin ese flag en cada método que el servidor nos llama a nosotros, StreamJsonRpc rechaza la llamada con *"an argument was not supplied for a required parameter"*. **Y el fallo es silencioso donde importa:** rechazar `workspace/configuration` no rompe nada visible — Roslyn anota un error en su propia cola y nunca termina de cargar la solución, así que el contrato contesta `indexing` para siempre y nada dice por qué. Costó la mayor parte del tiempo de depuración del bloque. De ahí salió `--LspServer:TraceProtocol=true`, que vuelca el tráfico LSP crudo: es la única forma de distinguir "no lo mandó" de "no lo enganchamos".
 
 ## ADR-012 — Formato del spec SDD: markdown humano con identificadores estables
 **Fecha:** 2026-08-07
@@ -121,9 +162,9 @@ Cuatro decisiones dentro de esa:
 - **Queda pendiente de verificación** que el conjunto funcione headless: referencia por nombre desde el frontmatter de un subagente, con el servidor pre-aprobado. Si algo falla, este ADR se actualiza con la razón.
 
 ## ADR-010 — Contrato del servidor MCP de LSP: tools, transporte HTTP y formato de `Diagnostic`
-**Fecha:** 2026-08-07
-**Estado:** **Propuesta** — se verifica contra servidores reales en el Bloque 2 del `ROADMAP.md`
-**ADRs relacionados:** ADR-004 (por qué LSP es la fuente de verdad), ADR-005 (por qué se expone como MCP), ADR-006 (qué language servers envuelve).
+**Fecha:** 2026-08-07 · **Verificado y promovido a Aceptada:** 2026-08-09 (Bloque 2)
+**Estado:** Aceptada
+**ADRs relacionados:** ADR-004 (por qué LSP es la fuente de verdad), ADR-005 (por qué se expone como MCP), ADR-006 (qué language servers envuelve), ADR-013 (en qué se implementó).
 
 ### Contexto
 ADR-005 decidió exponer el LSP como servidor MCP con **dos** consumidores: los agentes de capa, que quieren navegación durante su turno, y el orquestador, que quiere un veredicto para decidir la arista del grafo. Falta el contrato: qué tools, con qué firmas, qué transporte y qué forma tiene un diagnostic.
@@ -153,7 +194,16 @@ El contrato completo, con firmas y ejemplos, está en [docs/mcp-contract.md](doc
 - **Los servidores de `.mcp.json` con scope de proyecto piden aprobación interactiva.** En `claude -p` headless no hay quién apruebe, y el fallo no es un error: el agente corre **sin las tools de LSP, en silencio**, y el pipeline degrada a generación a ciegas — exactamente lo que el proyecto existe para evitar. El orquestador tiene que agregar el servidor a `enabledMcpjsonServers` en el `settings.json` del workspace generado, y **verificar al arrancar que las tools están disponibles** en vez de asumirlo. Registrado como riesgo en `ROADMAP.md`.
 - **Tres procesos que administrar** en `Orchestrator.Lsp`: el servidor MCP y los dos language servers. Apagado determinista obligatorio: un language server huérfano mantiene handles sobre `output/`, que ADR-008 exige poder borrar y regenerar de cero.
 - Un fallo del servidor devuelve error de MCP, nunca una respuesta vacía. Devolver `items: []` ante un servidor caído reintroduciría el falso verde por la puerta de atrás.
-- **El contrato está sin verificar.** Las firmas pueden cambiar cuando el Bloque 2 las pruebe contra Roslyn LSP y `typescript-language-server`. Los cambios actualizan este ADR y el documento del contrato.
+
+### Verificación del Bloque 2 (2026-08-09)
+
+El contrato se implementó y se consultó contra **los dos servidores reales**. Las cinco tools responden y las firmas se sostuvieron sin cambios. Lo que el bloque agregó:
+
+- **Campo nuevo: `statusDetail`.** Opcional, presente cuando `status` es `"indexing"`, con qué se está esperando (`"Roslyn is loading the solution 'App.slnx'"`). No estaba en el diseño en papel y se agregó por una razón concreta: durante la depuración, un `indexing` eterno y mudo es indistinguible de un servidor colgado. Un estado que no se puede diagnosticar termina siendo un estado que alguien decide ignorar.
+- **`status` quedó atado a una señal, no a un temporizador.** Roslyn emite `workspace/projectInitializationComplete` cuando termina de cargar la solución; `typescript-language-server` no tiene fase de carga equivalente y su garantía se hace por documento, esperando su primera publicación de diagnostics. En ningún caso hay un `sleep` estimado, que era el riesgo real de este campo.
+- **Segunda vía al falso verde, encontrada y cerrada: la normalización de rutas.** Nosotros emitimos `file:///F:/proyecto/src/tarea.ts`; `typescript-language-server` contesta sobre `file:///f%3A/proyecto/src/tarea.ts`. Mismo archivo, dos escrituras. Comparadas como texto son archivos distintos, y el daño es preciso: los diagnostics publicados quedan archivados bajo una clave que nadie consulta, **y el archivo parece limpio**. Es el mismo falso verde llegando por normalización en vez de por timing. Hay test de regresión.
+- **`workspaceSymbol` tiene una ventana de calentamiento propia.** Un language server puede reportar el workspace cargado mientras su índice de símbolos todavía se arma, y una consulta temprana vuelve vacía — indistinguible, en el contrato, de "ese símbolo no existe". No se corrigió en el contrato: queda registrado como deuda D7 en `ROADMAP.md`, porque el consumidor real (el agente de capa, no el gate) tolera reintentar y el gate no depende de esta tool.
+- **Endpoint `/health` fuera del contrato MCP.** Devuelve el estado de indexado de cada servidor. Existe para que el orquestador pueda *verificar* que la capa LSP está viva al arrancar en vez de asumirlo (fallar rápido, `AI.md`), sin abrir una sesión MCP para preguntarlo.
 
 ## ADR-009 — Artefacto de juguete: gestor de tareas con dependencias, no un CRUD vacío
 **Fecha:** 2026-08-07
@@ -298,9 +348,9 @@ dura el proceso; la traza queda en el log estructurado en disco.
   nodo aislado sin correr el pipeline completo.
 
 ## ADR-006 — Servidor de lenguaje C#: Roslyn LSP en lugar de OmniSharp
-**Fecha:** 2026-08-07
-**Estado:** **Propuesta** — pendiente de verificación empírica en el Bloque 2 del `ROADMAP.md`
-**ADRs relacionados:** ADR-004 (por qué hay una capa LSP), ADR-005 (cómo se expone).
+**Fecha:** 2026-08-07 · **Verificado y promovido a Aceptada:** 2026-08-09 (Bloque 2)
+**Estado:** Aceptada
+**ADRs relacionados:** ADR-004 (por qué hay una capa LSP), ADR-005 (cómo se expone), ADR-013 (con qué se le habla).
 
 ### Contexto
 La capa LSP necesita un servidor de lenguaje por stack. Para TypeScript/React la elección es
@@ -323,13 +373,13 @@ el propio fabricante dejó atrás — y tener que defenderlo en la entrevista.
 **Roslyn LSP (`Microsoft.CodeAnalysis.LanguageServer`) para C#**, `typescript-language-server`
 para TypeScript/React.
 
-**El estado es `Propuesta`, no `Aceptada`, a propósito.** La afirmación "OmniSharp está en
+**El estado fue `Propuesta`, no `Aceptada`, a propósito.** La afirmación "OmniSharp está en
 modo legado" es conocimiento general del ecosistema, no algo verificado en este proyecto, y
 Roslyn LSP tiene un modo de distribución y arranque distinto (paquete NuGet, no un ejecutable
-suelto) que puede complicar la integración desde un proceso .NET. La decisión se promueve a
-`Aceptada` recién cuando el Bloque 2 muestre diagnostics reales llegando desde un archivo
-`.cs` roto a propósito. Si la integración resulta impracticable en el plazo, se revierte a
-OmniSharp y este ADR se actualiza con la razón — no se reescribe la historia.
+suelto) que podía complicar la integración desde un proceso .NET. La condición de promoción
+era mostrar diagnostics reales llegando desde un `.cs` roto a propósito.
+
+**Se cumplió el 2026-08-09 y no hizo falta el plan B.** El detalle está abajo.
 
 ### Alternativas
 - **OmniSharp** → descartado salvo como plan B, por lo dicho arriba. Ventaja real que
@@ -353,6 +403,50 @@ OmniSharp y este ADR se actualiza con la razón — no se reescribe la historia.
   confiar en la primera respuesta. Es la trampa más probable del Bloque 2.
 - Si el Bloque 2 se atrasa, el Bloque 3 no se bloquea: el grafo se construye contra
   `FakeLanguageServer` (`AI.md`, regla de oro 3). Los bloques se solapan a propósito.
+
+### Verificación del Bloque 2 (2026-08-09)
+
+El riesgo R3 del `ROADMAP.md` era exactamente esto: *"su forma de distribución y su arranque
+desde otro proceso es lo que este ADR marcó como no verificado"*. Las dos mitades, resueltas:
+
+**Distribución.** `Microsoft.CodeAnalysis.LanguageServer` **no está en nuget.org**. Vive en el
+feed público de Visual Studio —`https://pkgs.dev.azure.com/azure-public/vside/_packaging/vs-impl/nuget/v3/index.json`—
+en paquetes por RID: `Microsoft.CodeAnalysis.LanguageServer.win-x64`, versión fijada
+`5.4.0-2.26179.14`. Trae un **ejecutable standalone** `net10.0` con `rollForward: Major`, así que
+corre con el SDK ya instalado. Se obtiene con `PackageDownload` (no `PackageReference`: lo
+lanzamos como proceso, no compilamos contra él) y **no se copia al output** — son ~140 MB; la
+ruta resuelta se hornea en el `runtimeconfig` y se lee al arrancar. El feed está acotado con
+`packageSourceMapping` a esa familia de paquetes y nada más.
+
+**Arranque.** `--stdio` existe y funciona; `--logLevel` y `--extensionLogDirectory` son
+obligatorios. Dos comportamientos propios de Roslyn, que ningún cliente LSP genérico modela:
+
+1. **No descubre la solución desde `rootUri`.** Hay que mandarle `solution/open` (o
+   `project/open`). Sin eso se queda esperando, callado. Acepta `.slnx`, verificado.
+2. **Avisa el fin de la carga** con `workspace/projectInitializationComplete`. Esa notificación
+   es lo que hace honesto el campo `status` de ADR-010: antes de que llegue, un pull de
+   diagnostics vuelve vacío porque todavía no compiló nada. Sin la señal habría que estimar con
+   un `sleep`, que es precisamente cómo un gate aprueba código roto.
+
+**Resultado medido** contra `fixtures/broken-csharp`: `diagnostics` devuelve
+`CS1061 · 'Tarea' does not contain a definition for 'Cerrar'` en `Api/TareasController.cs:27`, y
+`definition` sobre una llamada sana aterriza en `Domain/Tarea.cs:19` —cruzando la frontera entre
+dos proyectos— con la firma `bool Tarea.Completar(IReadOnlyList<Tarea> prerequisitos)`.
+Reproducible con `dotnet run --project src/Orchestrator.LspServer.ManualVerification`.
+
+**Un detalle no previsto: el idioma.** Roslyn distribuye recursos localizados y los elige según
+el idioma de la máquina, así que en un Windows en español los diagnostics llegan en español. No
+es cosmético: esos mensajes no se quedan en el log, se pegan en el prompt del agente que tiene
+que arreglar el código, al lado de fuente e instrucciones en inglés. Se fija arrancando el
+proceso con `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`, que fuerza el fallback a los recursos
+neutros. `DOTNET_CLI_UI_LANGUAGE` **no** alcanza: gobierna los mensajes del host, no los del
+servidor.
+
+`typescript-language-server` 5.3.0 quedó verificado en la misma corrida, instalado **local al
+workspace** (`node_modules`) y no global, que es como va a estar en la app generada. Se lanza con
+`node <ruta>/lib/cli.mjs --stdio`, evitando el shim `.cmd` de npm. **No soporta pull diagnostics**
+—no anuncia `diagnosticProvider`—, así que ahí el contrato se sostiene esperando la publicación
+por documento.
 
 ## ADR-005 — El LSP se expone a los agentes como servidor MCP, no como tool interna
 **Fecha:** 2026-08-07

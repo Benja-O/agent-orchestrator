@@ -112,6 +112,8 @@ aplicalo directo (en código nuevo que estés generando vos).
 | Ruta | Contenido |
 |---|---|
 | `src/` | La solución .NET del orquestador (ver estructura de proyectos en `AI.md`) |
+| `fixtures/` | Código roto a propósito contra el que se verifica la capa LSP. Nadie más lo compila |
+| `tools/` | Scripts de operación. Hoy: matar language servers que hayan quedado vivos |
 | `specs/` | Specs SDD de entrada. Hoy: el gestor de tareas de ADR-009 |
 | `docs/` | Documentos de diseño que no son ADR ni referencia técnica. Hoy: el contrato del servidor MCP |
 | `docs/prompts/` | Un prompt de arranque por bloque del `ROADMAP.md`, escrito al cerrar el bloque anterior |
@@ -125,16 +127,48 @@ el orquestador no está haciendo su trabajo y eso es el bug a arreglar.
 
 ## 🧰 Comandos
 
-> **Pendiente hasta el Bloque 2 del `ROADMAP.md`**, cuando exista la solución .NET.
+```
+dotnet build src/Orchestrator.slnx
+dotnet test  src/Orchestrator.LspServer.Tests     # 2 s, sin red, sin language servers
+```
+
+**La verificación manual de la capa LSP** — arranca servidores reales contra los fixtures rotos
+a propósito de `fixtures/`, consulta las cinco tools y comprueba las respuestas:
 
 ```
-dotnet build src/
-dotnet test  src/
+dotnet run --project src/Orchestrator.LspServer.ManualVerification
+dotnet run --project src/Orchestrator.LspServer.ManualVerification -- --only typescript --trace
+```
+
+No es un test y no está en la suite, por la regla de oro 3. `--trace` vuelca el tráfico LSP
+crudo: es lo que hay que mirar cuando un language server se queda callado en vez de fallar, que
+es como esta integración rompe de verdad.
+
+**Levantar el servidor MCP a mano**, contra cualquier workspace:
+
+```
+dotnet run --project src/Orchestrator.LspServer -- --urls=http://127.0.0.1:5599 \
+  --LspServer:WorkspaceRoot=output --LspServer:LogDirectory=logs/language-servers
+curl http://127.0.0.1:5599/health
+```
+
+**Si algo quedó vivo** (un language server huérfano bloquea el `bin/` en el próximo build y
+mantiene handles sobre `output/`): `pwsh tools/kill-language-servers.ps1`.
+
+Pendiente hasta el Bloque 5:
+
+```
 dotnet run --project src/Orchestrator.Cli -- --spec specs/gestor-tareas.md --output output/
 ```
 
-Dependencia de entorno: el ejecutable `claude` tiene que estar en el `PATH`. El orquestador
-lo verifica al arrancar y falla rápido si no responde (`AI.md`).
+Dependencias de entorno:
+
+- El ejecutable `claude` en el `PATH`. El orquestador lo verifica al arrancar y falla rápido si
+  no responde (`AI.md`).
+- `node` en el `PATH`, y `typescript-language-server` instalado **en el `node_modules` del
+  workspace analizado**, no global.
+- El feed de NuGet de Visual Studio, declarado en `NuGet.config`: de ahí sale Roslyn LSP, que no
+  está publicado en nuget.org (ADR-006).
 
 ## 📝 Commits
 
