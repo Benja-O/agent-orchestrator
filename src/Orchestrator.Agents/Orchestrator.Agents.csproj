@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Orchestrator.Agents</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Orchestrator.Domain\Orchestrator.Domain.csproj" />
+  </ItemGroup>
+
+  <!--
+    The command line and the response translation are the parts worth testing exhaustively, and
+    they are internal because nothing outside this adapter should be building either.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Orchestrator.Agents.Tests" />
+  </ItemGroup>
+
+</Project>

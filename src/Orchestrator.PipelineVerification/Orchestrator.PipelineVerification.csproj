@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Orchestrator.PipelineVerification</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Orchestrator.Agents\Orchestrator.Agents.csproj" />
+    <ProjectReference Include="..\Orchestrator.Application\Orchestrator.Application.csproj" />
+    <ProjectReference Include="..\Orchestrator.Lsp\Orchestrator.Lsp.csproj" />
+    <ProjectReference Include="..\Orchestrator.Observability\Orchestrator.Observability.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -65,6 +65,70 @@ public sealed record LspDidOpenTextDocumentParams
     public required LspTextDocumentItem TextDocument { get; init; }
 }
 
+public sealed record LspVersionedTextDocumentIdentifier
+{
+    public required string Uri { get; init; }
+
+    /// <summary>Has to increase on every change, or the server keeps the text it already had.</summary>
+    public required int Version { get; init; }
+}
+
+/// <summary>
+/// One edit to a document: <see cref="Text"/> replaces whatever <see cref="Range"/> covers.
+/// </summary>
+/// <remarks>
+/// The protocol also allows a range-less form meaning "this is the whole new document", and
+/// <strong>Roslyn does not implement it</strong>: its <c>DidChangeHandler</c> dereferences the
+/// range unconditionally and throws a <c>NullReferenceException</c> inside its request queue —
+/// after which it stops answering anything, silently, forever. So the range is required here even
+/// though the specification says otherwise, and a whole-document replacement is expressed as an
+/// edit spanning the whole of the previous text (block 4).
+/// </remarks>
+public sealed record LspTextDocumentContentChangeEvent
+{
+    public required LspRange Range { get; init; }
+
+    public required string Text { get; init; }
+}
+
+public sealed record LspDidChangeTextDocumentParams
+{
+    public required LspVersionedTextDocumentIdentifier TextDocument { get; init; }
+
+    public required IReadOnlyList<LspTextDocumentContentChangeEvent> ContentChanges { get; init; }
+}
+
+/// <summary>The <c>FileChangeType</c> values of the protocol.</summary>
+public static class LspFileChangeType
+{
+    public const int Created = 1;
+    public const int Changed = 2;
+    public const int Deleted = 3;
+}
+
+public sealed record LspFileEvent
+{
+    public required string Uri { get; init; }
+
+    /// <summary>One of <see cref="LspFileChangeType"/>.</summary>
+    public required int Type { get; init; }
+}
+
+/// <summary>
+/// Tells the server that files appeared, changed or vanished on disk.
+/// </summary>
+/// <remarks>
+/// Distinct from <c>textDocument/didOpen</c>, and the difference is the one that matters for a
+/// pipeline whose agents write new files: <c>didOpen</c> hands the server a buffer, while this is
+/// what makes a project system <em>include</em> the file in the compilation. Without it a file
+/// created after the solution was loaded is analysed detached from its project, or not at all —
+/// and a file nobody analyses reports no errors, which the gate reads as clean (block 4).
+/// </remarks>
+public sealed record LspDidChangeWatchedFilesParams
+{
+    public required IReadOnlyList<LspFileEvent> Changes { get; init; }
+}
+
 public sealed record LspTextDocumentPositionParams
 {
     public required LspTextDocumentIdentifier TextDocument { get; init; }
@@ -202,6 +266,8 @@ public static class LspMethodNames
     public const string Exit = "exit";
 
     public const string DidOpenTextDocument = "textDocument/didOpen";
+    public const string DidChangeTextDocument = "textDocument/didChange";
+    public const string DidChangeWatchedFiles = "workspace/didChangeWatchedFiles";
     public const string DidCloseTextDocument = "textDocument/didClose";
     public const string DocumentDiagnostic = "textDocument/diagnostic";
     public const string Definition = "textDocument/definition";

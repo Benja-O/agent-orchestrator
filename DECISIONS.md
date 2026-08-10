@@ -243,8 +243,8 @@ Los identificadores son lo que hace **trazable** el pipeline: el plan de tareas 
 - La convención es una carga sobre quien escribe specs futuros. Para un proyecto de 2.5 semanas con un solo spec es trivial; a escala haría falta una plantilla o un generador.
 
 ## ADR-011 — Scope de los subagentes de capa: tools, modelo, límites y alcance de archivos
-**Fecha:** 2026-08-07
-**Estado:** **Propuesta** — el conjunto se valida en el Bloque 4 del `ROADMAP.md`
+**Fecha:** 2026-08-07 · **Verificado y promovido a Aceptada:** 2026-08-10 (Bloque 4), con cuatro correcciones
+**Estado:** Aceptada
 **ADRs relacionados:** ADR-001 (los agentes son subagentes de Claude Code), ADR-010 (el servidor MCP que consumen), ADR-004 (por qué consultan el gate).
 
 ### Contexto
@@ -284,7 +284,52 @@ Cuatro decisiones dentro de esa:
 - **El agente de API depende de poder consultar el dominio.** No lo escribió él y no debe asumir firmas: `workspaceSymbol`, `documentSymbol` y `definition` son su forma de preguntar. Es la función (2) de ADR-004 en uso concreto — y si esos tools no existieran, este agente estaría adivinando.
 - **`spec-analyzer` sin permiso de escritura es deliberado.** Su salida es un plan; si pudiera escribir código, la frontera entre planificar y ejecutar se disolvería en el primer turno.
 - Los cuatro prompts repiten la misma instrucción sobre `status: "indexing"`. Es duplicación consciente: es la trampa más cara del proyecto y cada agente la enfrenta solo.
-- **Queda pendiente de verificación** que el conjunto funcione headless: referencia por nombre desde el frontmatter de un subagente, con el servidor pre-aprobado. Si algo falla, este ADR se actualiza con la razón.
+
+### Verificación del Bloque 4 (2026-08-10)
+
+El conjunto se corrió headless por primera vez. **La decisión se sostiene; cuatro de sus mecanismos
+no funcionaban como este ADR los describía**, y ninguno de los cuatro fallaba con un error.
+
+Lo que hace caro este hallazgo es que los cuatro producen el mismo síntoma —un agente que corre,
+contesta con seguridad y no tiene acceso al servidor de lenguaje— y que ese síntoma es
+indistinguible del éxito si nadie lo va a buscar. La evidencia se obtuvo leyendo el mensaje `init`
+de `--output-format stream-json`, que lista servidores y tools **antes** de cualquier inferencia:
+es determinista y no depende de que el modelo reporte bien lo que ve.
+
+| # | Lo que este ADR daba por hecho | Lo que pasa de verdad | Cómo queda |
+|---|---|---|---|
+| 1 | El `.mcp.json` de proyecto más `enabledMcpjsonServers` alcanzan | En `-p` **los settings de proyecto no se cargan por default**, así que la lista que pre-aprueba el servidor nunca se lee. El servidor queda en `pending` y el agente ve **cero** tools | `--setting-sources project` en toda invocación, y el servidor además pasa por `--mcp-config` (ver ADR-010) |
+| 2 | `tools` es un allowlist de herramientas *built-in* | También filtra las tools MCP: con `tools: Read, Write, Edit, Glob, Grep`, el agente ve **cero** tools de `lsp` aunque el servidor esté conectado | Las tres plantillas de capa nombran las cinco `mcp__lsp__*` en su `tools` |
+| 3 | Que una tool esté disponible alcanza para que el agente la use | Disponibilidad y permiso son dos interruptores distintos. La tool aparece, el agente la llama, y la llamada **pide autorización** — que en headless nadie da | `--allowedTools` con las built-in de la capa más las cinco de `lsp` |
+| 4 | El alcance de archivos se enforcea con un hook `PreToolUse` **en el frontmatter del subagente** | El campo `hooks` del frontmatter **no se aplica**. Los hooks de `settings.json` sí | El hook se pasa **por invocación** con `--settings`, con la carpeta de esa capa |
+
+**La corrección (4) merece un párrafo porque este ADR había descartado explícitamente la
+alternativa que terminó siendo la buena.** El argumento contra las reglas de sesión era que "no
+distinguen al agente de dominio del de API". El argumento era correcto y dejó de aplicar: el
+orquestador invoca **un agente por proceso** (`claude -p --agent <nombre>`), así que la sesión *es*
+el agente, y el hook se entrega por invocación en vez de escribirse en un archivo que dos agentes
+compartirían. La objeción no se pasó por alto: se disolvió al cambiar cómo se invoca.
+
+**Y una quinta cosa, que no es una corrección de este ADR sino la lección que lo generaliza.** La
+primera versión del hook era un script de PowerShell invocado con `pwsh`, que no está instalado en
+todas las máquinas Windows —incluida la de desarrollo—. **La respuesta de Claude Code a un hook que
+no puede lanzar es registrarlo y dejar pasar la escritura.** La barrera estaba ausente y todo se veía
+normal, que es la peor configuración posible para una barrera, porque a partir de ahí se le cree. El
+hook pasó a `node`, que ya es dependencia dura del proyecto, y **el orquestador comprueba al
+arrancar que efectivamente bloquea** (`AgentEnvironmentCheck`), en vez de asumirlo.
+
+De ahí sale el criterio que vale más que los cuatro arreglos: **todos los mecanismos de seguridad de
+esta integración fallan abiertos.** Un servidor no aprobado, una tool disponible pero no permitida,
+un hook cuyo intérprete falta — cada uno degrada en silencio a "sin protección". Así que cada uno se
+sondea al arrancar en lugar de confiarse.
+
+**Lo que no cambió:** los cuatro subagentes, sus `tools`, sus `model`, sus `maxTurns`, la referencia
+por nombre a `mcpServers` y el `spec-analyzer` sin permiso de escritura. La tabla de arriba sigue
+vigente tal cual.
+
+**Deuda D5, cobrada.** El hook existe, está versionado en `templates/hooks/restrict-to-layer.js`, y
+tiene tests que lo corren de verdad —rutas dentro de la capa, rutas de otra capa, rutas absolutas,
+`..`, y entrada ilegible, que se rechaza en vez de dejarse pasar—.
 
 ## ADR-010 — Contrato del servidor MCP de LSP: tools, transporte HTTP y formato de `Diagnostic`
 **Fecha:** 2026-08-07 · **Verificado y promovido a Aceptada:** 2026-08-09 (Bloque 2)
@@ -316,7 +361,7 @@ El contrato completo, con firmas y ejemplos, está en [docs/mcp-contract.md](doc
 - **Que el orquestador use su propio cliente LSP directo, sin pasar por MCP** → descartado: serían dos implementaciones del mismo wrapping, y dos implementaciones divergen. Peor: divergirían justo en el punto donde el proyecto afirma que el agente y el gate ven la misma verdad.
 
 ### Consecuencias
-- **Los servidores de `.mcp.json` con scope de proyecto piden aprobación interactiva.** En `claude -p` headless no hay quién apruebe, y el fallo no es un error: el agente corre **sin las tools de LSP, en silencio**, y el pipeline degrada a generación a ciegas — exactamente lo que el proyecto existe para evitar. El orquestador tiene que agregar el servidor a `enabledMcpjsonServers` en el `settings.json` del workspace generado, y **verificar al arrancar que las tools están disponibles** en vez de asumirlo. Registrado como riesgo en `ROADMAP.md`.
+- **Los servidores de `.mcp.json` con scope de proyecto piden aprobación interactiva.** En `claude -p` headless no hay quién apruebe, y el fallo no es un error: el agente corre **sin las tools de LSP, en silencio**, y el pipeline degrada a generación a ciegas — exactamente lo que el proyecto existe para evitar. El orquestador tiene que agregar el servidor a `enabledMcpjsonServers` en el `settings.json` del workspace generado, y **verificar al arrancar que las tools están disponibles** en vez de asumirlo. Registrado como riesgo en `ROADMAP.md`. *(Corregido en el Bloque 4 — ver abajo: esa mitigación es necesaria pero no alcanza, y la causa raíz era otra.)*
 - **Tres procesos que administrar** en `Orchestrator.Lsp`: el servidor MCP y los dos language servers. Apagado determinista obligatorio: un language server huérfano mantiene handles sobre `output/`, que ADR-008 exige poder borrar y regenerar de cero.
 - Un fallo del servidor devuelve error de MCP, nunca una respuesta vacía. Devolver `items: []` ante un servidor caído reintroduciría el falso verde por la puerta de atrás.
 
@@ -329,6 +374,27 @@ El contrato se implementó y se consultó contra **los dos servidores reales**. 
 - **Segunda vía al falso verde, encontrada y cerrada: la normalización de rutas.** Nosotros emitimos `file:///F:/proyecto/src/tarea.ts`; `typescript-language-server` contesta sobre `file:///f%3A/proyecto/src/tarea.ts`. Mismo archivo, dos escrituras. Comparadas como texto son archivos distintos, y el daño es preciso: los diagnostics publicados quedan archivados bajo una clave que nadie consulta, **y el archivo parece limpio**. Es el mismo falso verde llegando por normalización en vez de por timing. Hay test de regresión.
 - **`workspaceSymbol` tiene una ventana de calentamiento propia.** Un language server puede reportar el workspace cargado mientras su índice de símbolos todavía se arma, y una consulta temprana vuelve vacía — indistinguible, en el contrato, de "ese símbolo no existe". No se corrigió en el contrato: queda registrado como deuda D7 en `ROADMAP.md`, porque el consumidor real (el agente de capa, no el gate) tolera reintentar y el gate no depende de esta tool.
 - **Endpoint `/health` fuera del contrato MCP.** Devuelve el estado de indexado de cada servidor. Existe para que el orquestador pueda *verificar* que la capa LSP está viva al arrancar en vez de asumirlo (fallar rápido, `AI.md`), sin abrir una sesión MCP para preguntarlo.
+
+### Corrección del Bloque 4 (2026-08-10) — cómo se declara el servidor
+
+La consecuencia de arriba nombraba bien el síntoma (**el agente corre sin tools, en silencio**) y
+**se equivocaba en la causa**, con lo cual la mitigación que proponía no alcanzaba.
+
+`enabledMcpjsonServers` en el `settings.json` del workspace es correcto, pero **inerte en headless**:
+`claude -p` no carga los settings de proyecto por default, así que el archivo que otorga la
+aprobación no se lee. El servidor queda en `pending` y el agente recibe cero tools. Escribir la lista
+y darla por buena era exactamente el falso verde de este contrato aplicado a su propia configuración.
+
+**El servidor se declara ahora en la invocación**, con `--mcp-config`, y ahí la aprobación no
+interviene. Además tiene una ventaja que el diseño en papel no podía tener: **el puerto se elige en
+tiempo de ejecución**, así que la URL real nunca pudo haber vivido en un archivo versionado. El
+`.mcp.json` se sigue escribiendo en el workspace, con `enabledMcpjsonServers` al lado, pero para otra
+cosa: que una persona pueda abrir `output/` a mano para depurar una corrida. El pipeline no depende
+de él.
+
+Lo que sí se sostuvo entero: **un solo servidor para los dos consumidores**, referenciado **por
+nombre** desde el frontmatter de los subagentes. Verificado end-to-end — un agente headless llamó a
+`diagnostics` y recibió el `CS1061` real del fixture roto a propósito.
 
 ## ADR-009 — Artefacto de juguete: gestor de tareas con dependencias, no un CRUD vacío
 **Fecha:** 2026-08-07

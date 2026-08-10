@@ -1,7 +1,7 @@
 ---
 name: frontend
 description: Implementa la interfaz en React sobre una API HTTP que ya existe: lista de tareas, acciones y presentación de los errores de regla de negocio.
-tools: Read, Write, Edit, Glob, Grep
+tools: Read, Write, Edit, Glob, Grep, mcp__lsp__diagnostics, mcp__lsp__definition, mcp__lsp__references, mcp__lsp__documentSymbol, mcp__lsp__workspaceSymbol
 model: haiku
 mcpServers:
   - lsp

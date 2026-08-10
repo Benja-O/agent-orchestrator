@@ -1,0 +1,72 @@
+{
+  "status": "ready",
+  "total": 5,
+  "truncated": false,
+  "items": [
+    {
+      "filePath": "Api/TareasController.cs",
+      "range": {
+        "startLine": 27,
+        "startColumn": 22,
+        "endLine": 27,
+        "endColumn": 28
+      },
+      "severity": "error",
+      "code": "CS1061",
+      "message": "'Tarea' does not contain a definition for 'Cerrar' and no accessible extension method 'Cerrar' accepting a first argument of type 'Tarea' could be found (are you missing a using directive or an assembly reference?)",
+      "source": "roslyn"
+    },
+    {
+      "filePath": "Api/TareasController.cs",
+      "range": {
+        "startLine": 3,
+        "startColumn": 11,
+        "endLine": 3,
+        "endColumn": 27
+      },
+      "severity": "information",
+      "code": "IDE0130",
+      "message": "Namespace \"BrokenCSharp.Api\" does not match folder structure, expected \"Api\"",
+      "source": "roslyn"
+    },
+    {
+      "filePath": "Api/TareasController.cs",
+      "range": {
+        "startLine": 11,
+        "startColumn": 55,
+        "endLine": 11,
+        "endColumn": 58
+      },
+      "severity": "information",
+      "code": "IDE0028",
+      "message": "Collection initialization can be simplified",
+      "source": "roslyn"
+    },
+    {
+      "filePath": "Domain/Tarea.cs",
+      "range": {
+        "startLine": 1,
+        "startColumn": 11,
+        "endLine": 1,
+        "endColumn": 30
+      },
+      "severity": "information",
+      "code": "IDE0130",
+      "message": "Namespace \"BrokenCSharp.Domain\" does not match folder structure, expected \"Domain\"",
+      "source": "roslyn"
+    },
+    {
+      "filePath": "Domain/Tarea.cs",
+      "range": {
+        "startLine": 6,
+        "startColumn": 12,
+        "endLine": 6,
+        "endColumn": 17
+      },
+      "severity": "information",
+      "code": "IDE0290",
+      "message": "Use primary constructor",
+      "source": "roslyn"
+    }
+  ]
+}

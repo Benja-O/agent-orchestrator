@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Orchestrator.Lsp</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" Version="2.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Orchestrator.Domain\Orchestrator.Domain.csproj" />
+  </ItemGroup>
+
+  <!--
+    The translation from the contract's wire shape to the domain type is the part of this
+    adapter worth testing exhaustively, and it is internal because nothing outside should be
+    reaching for it.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Orchestrator.Lsp.Tests" />
+  </ItemGroup>
+
+</Project>

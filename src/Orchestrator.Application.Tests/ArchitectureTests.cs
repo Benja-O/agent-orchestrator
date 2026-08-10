@@ -75,6 +75,36 @@ public sealed class ArchitectureTests
     }
 
     /// <summary>
+    /// Golden rule 3 again, from the other side: the graph's own suite cannot reach a real
+    /// adapter even by accident.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The check above scans the types the suite can see, which was enough while the adapters did
+    /// not exist. Since block 4 they do, and a single <c>ProjectReference</c> added for
+    /// convenience would put <c>ClaudeCodeAgentRunner</c> one <c>new</c> away from a graph test —
+    /// where it would not fail, it would spend the Pro plan's five-hour window and take minutes
+    /// doing it.
+    /// </para>
+    /// <para>
+    /// The adapters have suites of their own, which is where their own logic is exercised. What
+    /// must never happen is the two being wired together in a test.
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData("Orchestrator.Agents")]
+    [InlineData("Orchestrator.Lsp")]
+    public void The_graphs_suite_does_not_reference_the_real_adapters(string adapterAssemblyName)
+    {
+        var reachable = new[] { DomainAssembly, ApplicationAssembly, typeof(FakeAgentRunner).Assembly, typeof(ArchitectureTests).Assembly }
+            .SelectMany(assembly => assembly.GetReferencedAssemblies())
+            .Select(reference => reference.Name)
+            .ToList();
+
+        Assert.DoesNotContain(adapterAssemblyName, reachable);
+    }
+
+    /// <summary>
     /// Golden rule 4: the clock is injected. A hard-coded <c>DateTime.UtcNow</c> would make
     /// the durations in the log and the retry behaviour untestable, so the only way the graph
     /// learns what time it is has to be a constructor parameter.

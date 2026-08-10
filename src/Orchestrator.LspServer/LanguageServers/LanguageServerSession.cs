@@ -30,7 +30,7 @@ public abstract class LanguageServerSession : ILanguageServerSession
     private readonly ILogger _logger;
     private readonly TimeSpan _requestTimeout;
     private readonly bool _traceProtocol;
-    private readonly HashSet<string> _openedDocuments = new(StringComparer.OrdinalIgnoreCase);
+    private readonly DocumentSynchronizer _documents = new();
     private readonly SemaphoreSlim _documentGate = new(1, 1);
 
     private Process? _process;
@@ -320,28 +320,95 @@ public abstract class LanguageServerSession : ILanguageServerSession
         await NotifyAsync(LspMethodNames.Initialized, new { }).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Makes sure the language server is looking at what is on disk right now — opening the
+    /// document the first time, and telling it about every later change.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>The second half is not an optimisation, it is the whole review loop.</strong> Once
+    /// a document has been opened, an LSP server answers about the text <em>it</em> holds and
+    /// stops caring what the file says; nothing on disk reaches it again unless someone sends a
+    /// change. An earlier version of this method opened each document once and returned early
+    /// forever after, which is invisible in any scenario that reads a file a single time — and
+    /// block 2's manual verification did exactly that.
+    /// </para>
+    /// <para>
+    /// It surfaced the first time block 4 ran a real review loop, as the exact inverse of the
+    /// false green this whole layer is built to prevent: the agent fixed the file, the gate kept
+    /// reporting the error it had seen the first time, and the run stopped for non-progress. A
+    /// <strong>false red</strong> — which fails safe, but tells the graph a lie and burns a paid
+    /// turn on work that was already done.
+    /// </para>
+    /// </remarks>
     protected async Task OpenDocumentAsync(string documentFullPath, CancellationToken cancellationToken)
     {
         await _documentGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (!_openedDocuments.Add(documentFullPath))
-            {
-                return;
-            }
-
             var text = await File.ReadAllTextAsync(documentFullPath, cancellationToken).ConfigureAwait(false);
+            var uri = new Uri(documentFullPath).AbsoluteUri;
+            var decision = _documents.Reconcile(documentFullPath, text);
 
-            await NotifyAsync(LspMethodNames.DidOpenTextDocument, new LspDidOpenTextDocumentParams
+            switch (decision.Action)
             {
-                TextDocument = new LspTextDocumentItem
-                {
-                    Uri = new Uri(documentFullPath).AbsoluteUri,
-                    LanguageId = GetLanguageId(documentFullPath),
-                    Version = 1,
-                    Text = text,
-                },
-            }).ConfigureAwait(false);
+                case DocumentSyncAction.Open:
+                    // A file the agent created after the workspace was loaded is not in the
+                    // project system yet, and `didOpen` alone does not put it there: the server
+                    // analyses it detached, or not at all, and a file nobody analyses reports no
+                    // errors — which the gate reads as clean. Announcing it as a filesystem event
+                    // first is what makes it part of the compilation (block 4).
+                    if (IndexingState.IsReady)
+                    {
+                        await NotifyAsync(LspMethodNames.DidChangeWatchedFiles, new LspDidChangeWatchedFilesParams
+                        {
+                            Changes = [new LspFileEvent { Uri = uri, Type = LspFileChangeType.Created }],
+                        }).ConfigureAwait(false);
+                    }
+
+                    await NotifyAsync(LspMethodNames.DidOpenTextDocument, new LspDidOpenTextDocumentParams
+                    {
+                        TextDocument = new LspTextDocumentItem
+                        {
+                            Uri = uri,
+                            LanguageId = GetLanguageId(documentFullPath),
+                            Version = decision.Version,
+                            Text = text,
+                        },
+                    }).ConfigureAwait(false);
+                    break;
+
+                // A whole-document rewrite, expressed as one edit spanning the whole of the
+                // previous text. The protocol has a shorter way to say this — a change event with
+                // no range — and Roslyn throws a NullReferenceException on it, inside its request
+                // queue, after which it answers nothing at all and never says why (block 4).
+                case DocumentSyncAction.Change:
+                    await NotifyAsync(LspMethodNames.DidChangeTextDocument, new LspDidChangeTextDocumentParams
+                    {
+                        TextDocument = new LspVersionedTextDocumentIdentifier { Uri = uri, Version = decision.Version },
+                        ContentChanges =
+                        [
+                            new LspTextDocumentContentChangeEvent
+                            {
+                                Range = new LspRange
+                                {
+                                    Start = new LspPosition { Line = 0, Character = 0 },
+                                    End = new LspPosition
+                                    {
+                                        Line = decision.EndOfPreviousText.Line,
+                                        Character = decision.EndOfPreviousText.Character,
+                                    },
+                                },
+                                Text = text,
+                            },
+                        ],
+                    }).ConfigureAwait(false);
+                    break;
+
+                case DocumentSyncAction.Nothing:
+                default:
+                    break;
+            }
         }
         finally
         {

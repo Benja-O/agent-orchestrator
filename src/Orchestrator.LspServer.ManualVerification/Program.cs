@@ -58,7 +58,11 @@ var scenarios = new[]
         DeclarationLine: 19,
         DeclarationColumn: 17,
         SymbolQuery: "Tarea",
-        OtherServerSetting: "--LspServer:TypeScript:Enabled=false"),
+        OtherServerSetting: "--LspServer:TypeScript:Enabled=false",
+        RepairedBrokenFile: "namespace BrokenCSharp.Api;\n",
+        NewFile: "Domain/AgregadoDespues.cs",
+        NewFileContent: "namespace BrokenCSharp.Domain;\n\npublic static class AgregadoDespues\n{\n    public static string Valor => NoExisteEsteTipo.Propiedad;\n}\n",
+        NewFileExpectedCode: "CS0103"),
 
     new Scenario(
         Name: "TypeScript — typescript-language-server",
@@ -74,7 +78,11 @@ var scenarios = new[]
         DeclarationLine: 11,
         DeclarationColumn: 10,
         SymbolQuery: "Tarea",
-        OtherServerSetting: "--LspServer:Roslyn:Enabled=false"),
+        OtherServerSetting: "--LspServer:Roslyn:Enabled=false",
+        RepairedBrokenFile: "export {};\n",
+        NewFile: "src/agregadoDespues.ts",
+        NewFileContent: "export const valor: number = \"no soy un number\";\n",
+        NewFileExpectedCode: "2322"),
 };
 
 var allFailures = new List<string>();
@@ -251,6 +259,92 @@ static async Task<List<string>> RunScenarioAsync(
         failures.Add($"workspaceSymbol never returned a symbol for '{scenario.SymbolQuery}'.");
     }
 
+    // The regression check for the false red of block 4, and the reason it is here rather than in
+    // the suite: it only means something against a real language server. An LSP server answers
+    // about the text it was handed, not about the file, so a session that opens a document once
+    // and never speaks about it again keeps reporting an error the agent already fixed. Every
+    // check above reads each file exactly once, which is precisely why none of them caught it.
+    Step("5. Fixing the broken file on disk and asking again");
+    var brokenFileFullPath = Path.Combine(scenario.FixtureDirectory, scenario.BrokenFile.Replace('/', Path.DirectorySeparatorChar));
+    var originalContent = await File.ReadAllTextAsync(brokenFileFullPath);
+
+    try
+    {
+        await File.WriteAllTextAsync(brokenFileFullPath, scenario.RepairedBrokenFile);
+
+        var afterRepair = await PollUntilAsync(
+            client,
+            answer => !answer.GetProperty("items").EnumerateArray().Any(item =>
+                item.GetProperty("filePath").GetString() == scenario.BrokenFile &&
+                item.GetProperty("code").GetString() == scenario.ExpectedCode),
+            TimeSpan.FromSeconds(60));
+
+        var stillBroken = afterRepair.GetProperty("items").EnumerateArray().Any(item =>
+            item.GetProperty("filePath").GetString() == scenario.BrokenFile &&
+            item.GetProperty("code").GetString() == scenario.ExpectedCode);
+
+        Print(afterRepair);
+
+        if (stillBroken)
+        {
+            failures.Add(
+                $"After {scenario.BrokenFile} was repaired on disk, the server still reports {scenario.ExpectedCode} there. "
+                + "That is the false red: the gate would send an agent back to fix work it already did.");
+        }
+        else
+        {
+            Console.WriteLine($"   OK — {scenario.ExpectedCode} is gone once the file changed on disk.\n");
+        }
+    }
+    finally
+    {
+        await File.WriteAllTextAsync(brokenFileFullPath, originalContent);
+    }
+
+    // The other half of the same problem, and the one that fails dangerously. Agents create files;
+    // a file that appears after the workspace was loaded is not in the project system, and a file
+    // no project contains is a file nobody analyses — which comes back as no diagnostics, which
+    // the gate reads as clean. A false green, produced by a file that does not compile.
+    Step("6. Creating a broken file mid-session and asking again");
+    var newFileFullPath = Path.Combine(scenario.FixtureDirectory, scenario.NewFile.Replace('/', Path.DirectorySeparatorChar));
+
+    try
+    {
+        await File.WriteAllTextAsync(newFileFullPath, scenario.NewFileContent);
+
+        var afterCreation = await PollUntilAsync(
+            client,
+            answer => answer.GetProperty("items").EnumerateArray().Any(item =>
+                item.GetProperty("filePath").GetString() == scenario.NewFile),
+            TimeSpan.FromSeconds(60));
+
+        var reported = afterCreation.GetProperty("items").EnumerateArray().FirstOrDefault(item =>
+            item.GetProperty("filePath").GetString() == scenario.NewFile);
+
+        Print(afterCreation);
+
+        if (reported.ValueKind == JsonValueKind.Object)
+        {
+            var code = reported.GetProperty("code").GetString();
+            Console.WriteLine($"   OK — the new file is analysed: {code} at {scenario.NewFile}.\n");
+
+            if (code != scenario.NewFileExpectedCode)
+            {
+                failures.Add($"Expected {scenario.NewFileExpectedCode} in the new file, got {code}.");
+            }
+        }
+        else
+        {
+            failures.Add(
+                $"A broken file created mid-session ({scenario.NewFile}) produced no diagnostics at all. "
+                + "That is a false green: the gate would approve a workspace that does not compile.");
+        }
+    }
+    finally
+    {
+        File.Delete(newFileFullPath);
+    }
+
     return failures;
 }
 
@@ -381,6 +475,33 @@ static async Task<JsonElement> PollUntilReadyAsync(McpClient client, TimeSpan ti
     throw new TimeoutException("The language server never left 'indexing'.");
 }
 
+/// <summary>
+/// Polls <c>diagnostics</c> until it is ready <em>and</em> the caller's condition holds.
+/// </summary>
+/// <remarks>
+/// Re-analysis after a file changes is not instantaneous, so a single query would be testing the
+/// server's speed instead of its correctness. Failing here means the condition never became true,
+/// not that it was slow.
+/// </remarks>
+static async Task<JsonElement> PollUntilAsync(McpClient client, Func<JsonElement, bool> condition, TimeSpan timeout)
+{
+    var deadline = DateTime.UtcNow + timeout;
+    var response = await CallAsync(client, "diagnostics", new() { ["scope"] = "." });
+
+    while (DateTime.UtcNow < deadline)
+    {
+        if (response.GetProperty("status").GetString() == "ready" && condition(response))
+        {
+            return response;
+        }
+
+        await Task.Delay(TimeSpan.FromSeconds(2));
+        response = await CallAsync(client, "diagnostics", new() { ["scope"] = "." });
+    }
+
+    return response;
+}
+
 internal sealed record Scenario(
     string Name,
     string FixtureDirectory,
@@ -395,7 +516,17 @@ internal sealed record Scenario(
     int DeclarationLine,
     int DeclarationColumn,
     string SymbolQuery,
-    string OtherServerSetting);
+    string OtherServerSetting,
+
+    /// <summary>Valid content for <see cref="BrokenFile"/>, used to check that a fix is noticed.</summary>
+    string RepairedBrokenFile,
+
+    /// <summary>A file that does not exist yet, created mid-session to check the gate sees it.</summary>
+    string NewFile,
+
+    string NewFileContent,
+
+    string NewFileExpectedCode);
 
 /// <summary>Kills the server and everything it started, however this scenario ends.</summary>
 internal sealed class ProcessKiller : IDisposable

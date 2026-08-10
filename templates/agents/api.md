@@ -1,7 +1,7 @@
 ---
 name: api
 description: Implementa la API HTTP en .NET sobre una capa de dominio que ya existe: endpoints, persistencia con EF Core InMemory y traducción de errores de dominio a respuestas HTTP.
-tools: Read, Write, Edit, Glob, Grep
+tools: Read, Write, Edit, Glob, Grep, mcp__lsp__diagnostics, mcp__lsp__definition, mcp__lsp__references, mcp__lsp__documentSymbol, mcp__lsp__workspaceSymbol
 model: haiku
 mcpServers:
   - lsp

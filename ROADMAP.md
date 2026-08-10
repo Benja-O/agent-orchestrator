@@ -15,32 +15,36 @@
 
 ---
 
-## Estado (2026-08-09) — Bloques 0 a 3 cerrados; próximo: Bloque 4
+## Estado (2026-08-10) — Bloques 0 a 4 cerrados; próximo: Bloque 5
 
-**El grafo corre end-to-end.** `src/Orchestrator.Domain/` y `src/Orchestrator.Application/`
-implementan la máquina de estados de ADR-003 con sus tres vías de terminación, el gate que
-nunca lee `indexing` como aprobación, y el Spec Analyzer. Corre entero contra
-`FakeAgentRunner` y `FakeLanguageServer`, que comparten un `FakeWorkspace` — 124 tests, ninguna
-tanda por encima de un segundo, verificado con `claude` fuera del `PATH`.
+**El pipeline corre con agentes reales.** Los dos adaptadores que faltaban existen:
+`Orchestrator.Agents` invoca `claude -p` y prepara el workspace, `Orchestrator.Lsp` es dueño del
+proceso del servidor MCP y traduce sus diagnostics al tipo de dominio. El grafo no cambió una
+línea — la frontera ya estaba probada del lado de adentro, que era la apuesta del Bloque 3 y
+salió bien.
 
-**No queda ninguna decisión abierta del briefing.** ADR-014 (testing) y ADR-015
-(observabilidad) cerraron las dos últimas. `AI.md` pasó su revisión agendada: ya describe
-código real salvo los tres proyectos que faltan, marcados como tales.
+**218 tests**, sin red y sin `claude` en el `PATH`. Y una corrida real, reproducible con
+`dotnet run --project src/Orchestrator.PipelineVerification`, en la que un error inyectado a
+propósito vuelve al agente de su capa y la iteración siguiente lo corrige.
 
-**El Bloque 3 cerró tres días antes de que empezara su ventana.** El margen acumulado —tres
-días del Bloque 1, cinco del 2, la ventana entera del 3— queda disponible para el Bloque 4, que
-es donde vive el riesgo real: la cuota del plan Pro (R1) y la aprobación silenciosa de
-`.mcp.json` en headless (R5).
+**R5 está cerrado, y resultó ser tres riesgos, no uno.** Los tres producen el mismo síntoma —un
+agente que corre, contesta con seguridad y no tiene servidor de lenguaje— y ninguno levanta un
+error. El detalle está abajo, en el riesgo y en la entrada del historial. **ADR-011 pasó a
+Aceptada con cuatro correcciones**; era el único que quedaba en `Propuesta`, así que ya no hay
+ninguno.
+
+**Deuda D5 cobrada.** El hook `PreToolUse` de alcance de archivos existe, está versionado y tiene
+tests que lo corren de verdad.
 
 **Plazo: vie 2026-08-07 → lun 2026-08-24 (17 días).** Es el condicionante que ordena todas
 las prioridades de abajo: hay tiempo para un pipeline que funcione de punta a punta sobre un
 artefacto chico, y no lo hay para nada más.
 
-**Lo próximo — Bloque 4.** Los dos adaptadores que faltan, `Orchestrator.Agents` y
-`Orchestrator.Lsp`, y la primera corrida con agentes reales. Se construye contra interfaces que
-ya existen y ya están ejercitadas: el grafo no distingue un agente real de un fake, así que lo
-único nuevo del bloque es lo que pasa del otro lado de esa frontera. **La primera cosa a
-comprobar es R5**, no la última.
+**Lo próximo — Bloque 5.** La corrida completa sobre `specs/gestor-tareas.md`, con
+`Orchestrator.Cli` como host. Lo que el Bloque 4 dejó explícitamente pendiente y ahora bloquea:
+**el orquestador no arma el esqueleto de la solución generada** (`.slnx` y `.csproj`), y Roslyn
+carga una solución, no una carpeta de archivos sueltos. Hoy ese esqueleto lo escribe el arnés de
+verificación; decidir el layout del proyecto generado es trabajo del Bloque 5. Ver deuda D12.
 
 ---
 
@@ -52,7 +56,7 @@ comprobar es R5**, no la última.
 | **1** | sáb 08 – lun 10/08 | `specs/gestor-tareas.md` + contrato de tools del servidor MCP + scope de los subagentes | El spec está escrito en formato SDD, el contrato tiene firmas y formato de `Diagnostic` cerrados, y los cuatro subagentes están definidos — con sus tres ADRs | ✅ 07/08 |
 | **2** | sáb 09/08 | Servidor MCP de LSP sobre Roslyn LSP + `typescript-language-server` | Una consulta manual al servidor devuelve diagnostics reales de un `.cs` roto a propósito, **y** una consulta de `definition` devuelve la ubicación correcta. ADR-006 pasa a `Aceptada` o se revierte a OmniSharp | ✅ 09/08 |
 | **3** | mié 12 – dom 16/08 | Esqueleto del grafo (estado, nodos, transiciones) + Spec Analyzer | El grafo corre end-to-end contra `FakeAgentRunner` y `FakeLanguageServer`, incluido el ciclo de revisión y las tres vías de terminación. La suite corre sin `claude` en el `PATH` | ✅ 09/08 |
-| **4** | lun 17 – vie 21/08 | Agentes de capa (dominio, API .NET, React) + loop de revisión contra diagnostics reales | Un error inyectado a propósito hace volver el grafo al agente de esa capa, y la siguiente iteración lo corrige. Visible en el log | ⬜ |
+| **4** | lun 17 – vie 21/08 | Agentes de capa (dominio, API .NET, React) + loop de revisión contra diagnostics reales | Un error inyectado a propósito hace volver el grafo al agente de esa capa, y la siguiente iteración lo corrige. Visible en el log | ✅ 10/08 |
 | **5** | vie 21 – sáb 22/08 | Primera corrida completa: spec → app compilable | `output/` se genera de cero, la app compila, y el endpoint que intenta violar la invariante de ADR-009 la rechaza | ⬜ |
 | **6** | dom 23 – lun 24/08 | Pulido, README real, `DECISIONS.md` al día, demo ensayada | El README explica la arquitectura del grafo, la integración LSP y la integración con Claude Code. La demo corre de principio a fin sin intervención | ⬜ |
 
@@ -98,11 +102,10 @@ del orquestador, y ADR-015, observabilidad del grafo.
 > Los números corrieron: ADR-013 se usó en el Bloque 2 para el lenguaje y la topología del
 > servidor MCP, que era la decisión que ADR-002 había dejado abierta "hasta el Bloque 2".
 
-Queda **un** ADR en estado `Propuesta`, que no es una decisión abierta sino una decisión tomada
-y todavía no verificada contra la realidad: **ADR-011**, el scope de los subagentes de capa.
-Falta comprobar que el conjunto funciona headless —referencia a `mcpServers` por nombre desde
-el frontmatter, con el servidor pre-aprobado—, que es exactamente el riesgo R5. Se resuelve en
-el Bloque 4, o el ADR se actualiza con la razón.
+**Y ya no queda ninguno en `Propuesta`.** ADR-011 era el último: el Bloque 4 lo corrió headless,
+encontró que cuatro de sus mecanismos no funcionaban como estaban descritos —ninguno de los cuatro
+fallando con un error— y lo promovió a `Aceptada` con esas cuatro correcciones escritas. La
+decisión de fondo se sostuvo entera; lo que cambió fue cómo se la hace efectiva.
 
 ---
 
@@ -132,19 +135,27 @@ Lo que efectivamente costó tiempo no fue Roslyn sino la deserialización de par
 JSON-RPC (ADR-013, última consecuencia) — un modo de fallo que no estaba en ninguna lista de
 riesgos porque es silencioso.
 
-**R5 — El agente headless corre sin las tools de LSP, en silencio.** Los servidores declarados
-en un `.mcp.json` con scope de proyecto **piden aprobación interactiva** la primera vez. En
-`claude -p` no hay quién apruebe, y el fallo no levanta un error: el agente simplemente trabaja
-sin el servidor MCP y el pipeline degrada a generación a ciegas — precisamente lo que el
-proyecto existe para evitar. Sería un fallo caro de diagnosticar porque todo *parece* funcionar.
-*Mitigación:* el orquestador agrega el servidor a `enabledMcpjsonServers` en el `settings.json`
-del workspace generado, y **verifica al arrancar que las tools están disponibles** en vez de
-asumirlo (fallar rápido, `AI.md`). El endpoint `/health` del servidor MCP existe para esa
-verificación.
-*Se movió al Bloque 4.* Comprobarlo de verdad exige lanzar `claude -p`, y la regla de costo del
-Bloque 2 lo prohibía explícitamente. El Bloque 4 corre agentes reales de todos modos: ahí se
-paga una sola vez. **Sigue siendo el riesgo abierto más caro de diagnosticar del proyecto**, y
-la primera cosa a comprobar del bloque, no la última.
+**R5 — El agente headless corre sin las tools de LSP, en silencio.** ✅ **Cerrado el 2026-08-10.**
+Era real, se reprodujo al primer intento, **y eran tres riesgos con el mismo síntoma en vez de uno**.
+La hipótesis escrita —"el `.mcp.json` de proyecto pide aprobación interactiva"— nombraba bien el
+síntoma y erraba la causa, así que la mitigación que proponía no alcanzaba.
+
+| Vía | Qué pasa | Evidencia |
+|---|---|---|
+| Los settings de proyecto no se cargan en `-p` | `enabledMcpjsonServers` nunca se lee, el servidor queda `pending` | `mcp_servers: [{"name":"lsp","status":"pending"}]`, **cero** tools |
+| `tools:` del frontmatter filtra las tools MCP | Con `tools: Read, Write, …` el agente ve cero tools de `lsp` aunque el servidor esté conectado | Sin el campo `tools`: las cinco. Con `tools: Read`: ninguna |
+| Disponible ≠ permitida | El agente llama a la tool y la llamada pide autorización, que en headless nadie da | *"Necesito tu permiso para ejecutar `mcp__lsp__diagnostics`"* |
+
+*Cómo se cerró:* el servidor se declara en la invocación (`--mcp-config`), los settings de proyecto
+se cargan explícitamente (`--setting-sources project`), las plantillas de capa nombran las cinco
+`mcp__lsp__*` en su `tools`, y la invocación las permite con `--allowedTools`. **Verificado
+end-to-end:** un agente headless llamó a `diagnostics` y recibió el `CS1061` real del fixture roto a
+propósito, con `status: ready` y `total: 5`.
+
+*Lo que hay que llevarse, más allá del arreglo:* el diagnóstico se obtuvo del mensaje `init` de
+`--output-format stream-json`, que lista servidores y tools **antes** de cualquier inferencia. Es
+determinista y no depende de que el modelo reporte bien lo que ve — preguntarle al agente si tiene
+tools es exactamente el tipo de evidencia que este proyecto decidió no aceptar en ningún otro lado.
 
 **R4 — El gate verifica compilación, no corrección.** Una regla de negocio puede estar
 ausente y el código compilar perfecto (ADR-004, consecuencia final). El proyecto ya lo tiene
@@ -166,17 +177,129 @@ retomar si el proyecto continuara.
 | D2 | Sin paralelismo entre agentes de capa: el grafo es estrictamente secuencial | ADR-003 | Si el tiempo de corrida se vuelve el cuello de botella de la iteración |
 | D3 | El grafo es código, no configuración: cambiar el pipeline requiere recompilar | ADR-003 (alternativa descartada) | Cuando exista un segundo pipeline real que justifique la generalización |
 | D4 | Sin gate de tests sobre la app generada, solo gate de compilación | ADR-004 (alternativa descartada) | Fuera del alcance de 2.5 semanas; es la extensión natural del gate |
-| D5 | El alcance de archivos por agente es una convención del prompt, no una barrera | ADR-011 | **Tiene fecha: el hook `PreToolUse` se implementa en el Bloque 4.** Hasta entonces, un agente puede escribir fuera de su capa y nada lo detiene |
+| ~~D5~~ | ~~El alcance de archivos por agente es una convención del prompt, no una barrera~~ | ADR-011 | ✅ **Cobrada el 2026-08-10.** El hook vive en `templates/hooks/restrict-to-layer.js`, se pasa por invocación con la carpeta de esa capa, y tiene tests que lo ejecutan de verdad. El orquestador comprueba al arrancar que bloquea |
 | D6 | Reabrir una tarea completada abriría un hueco en RN-01 y queda fuera del spec | `specs/gestor-tareas.md`, fuera de alcance | Solo si se amplía el artefacto de juguete, cosa que ADR-009 desaconseja |
 | D7 | `workspaceSymbol` puede volver vacío mientras el índice de símbolos se calienta, y el contrato no distingue eso de "no existe" | Bloque 2, ADR-010 | Si un agente de capa concluye que una entidad no existe cuando sí existe. El gate no usa esta tool, así que no bloquea el pipeline |
 | D8 | El servidor MCP está fijado a `win-x64`: el paquete de Roslyn LSP es específico por RID | Bloque 2, ADR-006 | Si el proyecto tiene que correr en otra plataforma. Es una línea del `.csproj`, no un rediseño |
 | D9 | Volver a una capa anterior re-invoca también a las posteriores desde cero, aunque su código no haya cambiado | Bloque 3, `GraphRunner` | Si el costo por corrida se vuelve el problema. Requiere saber qué archivos tocó cada agente, que hoy el grafo no sabe |
 | D10 | La detección de no-progreso es heurística cuando el gate trunca: la huella solo cubre la ventana visible | Bloque 3, ADR-014 | Si aparece una corrida real con cientos de diagnostics. Hoy la respalda el límite de iteraciones y el log registra `truncated` |
-| D11 | El formato de salida del Spec Analyzer vive en dos lugares: el prompt de la plantilla y el parser | Bloque 3, ADR-014 | Si el parser empieza a fallar contra respuestas reales. Se cobra con un test que valide la plantilla contra los fixtures |
+| D11 | El formato de salida del Spec Analyzer vive en dos lugares: el prompt de la plantilla y el parser | Bloque 3, ADR-014 | Si el parser empieza a fallar contra respuestas reales. *El Bloque 4 le dio la primera evidencia real y salió bien: el plan del agente parseó al primer intento.* Se cobra con un test que valide la plantilla contra los fixtures |
+| **D12** | **El orquestador no arma el esqueleto de la solución generada** (`.slnx`, `.csproj`), y Roslyn carga una solución, no una carpeta de archivos sueltos. Sin esqueleto, el gate no analiza nada — y "no analiza nada" se ve igual que "está limpio" | Bloque 4 | **Bloquea el Bloque 5.** Hoy lo escribe el arnés de verificación; decidir el layout del proyecto generado es trabajo de ese bloque, y adelantarlo acá habría sido decidirlo de casualidad |
+| D13 | El servidor de TypeScript se apaga en la verificación del Bloque 4: necesita estar instalado en el `node_modules` del workspace analizado, que en una app recién generada no existe | Bloque 4 | Bloque 5, junto con D12. Ojo con la interacción: el contrato contesta `indexing` para todo el scope mientras **algún** servidor indexa, así que un servidor que nunca puede quedar listo impide que el gate dé veredicto sobre el código que sí lo está |
 
 ---
 
 ## Historial completado
+
+### ✅ Bloque 4 — Los adaptadores y la primera corrida con agentes reales (2026-08-10)
+
+El bloque donde el proyecto deja de correr contra fakes. Dos adaptadores, 94 tests nuevos, y el
+riesgo que venía arrastrándose desde el Bloque 1.
+
+**Criterio de salida, cumplido.** Se pedía que un error inyectado a propósito hiciera volver el
+grafo al agente de esa capa y que la iteración siguiente lo corrigiera, visible en el log.
+Reproducible con `dotnet run --project src/Orchestrator.PipelineVerification`.
+
+**La decisión de diseño del arnés vale más que el arnés.** El error no se planta a mano en
+`output/` —`CLAUDE.md` lo prohíbe, y con razón: un error puesto por una persona es un error que el
+pipeline nunca tuvo que sobrevivir— sino con un decorador sobre el runner real, que lo escribe
+**después del primer turno del agente de dominio**, en un archivo que el gate está por leer. Llega
+por la misma puerta por la que llegaría uno de verdad. Sembrarlo antes de la corrida habría probado
+menos: el agente podía notarlo y arreglarlo en la primera pasada, y entonces el loop de revisión —lo
+único que el arnés existe para mostrar— no habría corrido nunca.
+
+**R5 era tres riesgos, no uno, y la hipótesis escrita tenía mal la causa.** Está desarrollado arriba,
+en la sección de riesgos. Lo que conviene retener es la forma del hallazgo, no los tres arreglos:
+**todos los mecanismos de seguridad de esta integración fallan abiertos**. Un servidor MCP sin
+aprobar, una tool disponible pero sin permiso, un hook cuyo intérprete no está instalado: cada uno
+degrada en silencio a "sin protección", y los tres se ven exactamente igual que el éxito. De ahí que
+el orquestador ahora **sondee cada uno al arrancar** en vez de confiarse.
+
+**El hallazgo más valioso del bloque lo produjo la corrida que falló.** La primera verificación
+cumplió tres de sus cuatro puntos y se cayó en el último: el agente recibió el diagnostic, **corrigió
+el archivo** —se puede ver en disco— y el gate siguió reportando el mismo error. El grafo terminó por
+no-progreso habiendo progresado.
+
+La causa era un defecto del Bloque 2 que solo un loop real podía exponer. Un language server
+contesta sobre el texto que **le dieron**, no sobre el archivo: la sesión mandaba `textDocument/didOpen`
+una sola vez por documento y no volvía a hablarle nunca, así que nada de lo que pasara en disco lo
+alcanzaba. Es correcto para cualquier escenario que lea un archivo una vez —y la verificación manual
+del Bloque 2 hacía exactamente eso—, y está roto en silencio para un loop de revisión.
+
+**Es el falso verde al revés, y merece nombre propio: un falso rojo.** No aprueba código roto, así
+que el instinto de "falla del lado seguro" lo deja pasar. Y es el mismo defecto: **el gate afirmando
+algo que no es cierto**, esta vez quemando un turno pago en rehacer trabajo ya hecho, y —peor— dando
+por agotado a un agente que estaba funcionando bien.
+
+**El arreglo tenía una segunda trampa abajo, y es la firma de Roslyn: el silencio.** El protocolo
+permite un `didChange` sin `range`, que significa "este es el documento nuevo entero". Roslyn no lo
+implementa —desreferencia el `range` igual, tira `NullReferenceException` dentro de su cola de
+requests— y a partir de ahí **deja de contestar todo, para siempre, sin cerrar la conexión ni
+devolver un error**. Con el arreglo ingenuo puesto, la corrida se veía peor que sin arreglar. Lo
+diagnosticó `--LspServer:TraceProtocol=true`, que es exactamente para lo que el Bloque 2 lo había
+construido: es la tercera vez que este proyecto se topa con que **Roslyn no falla, se calla**.
+
+Una reescritura completa se manda entonces como una edición incremental que cubre todo el texto
+anterior. La lógica vive en `DocumentSynchronizer`, aparte, para testearla sin servidor real, y el
+arnés del Bloque 2 ganó un paso 5 —arreglar el archivo en disco y volver a preguntar— que cierra la
+regresión contra los dos servidores reales sin gastar cuota.
+
+**Y abajo de esa había una tercera, que sí es un falso verde y es la peor de las tres.** La corrida
+siguiente mostró el gate contestando `clean` con el error inyectado presente en disco. Causa:
+**un archivo creado después de que la solución se cargó no está en el sistema de proyectos**, y
+`textDocument/didOpen` no lo mete ahí — el servidor lo analiza suelto, o no lo analiza. Un archivo
+que nadie analiza no reporta errores, y eso llega al gate como "compila". Es *el* modo de fallo que
+el proyecto entero existe para evitar, y aparece exactamente en el escenario que más importa: **los
+agentes crean archivos todo el tiempo.** Se cierra anunciando el alta con
+`workspace/didChangeWatchedFiles` antes del `didOpen`, y tiene su paso 6 en el arnés del Bloque 2.
+
+Vale registrar que la corrida lo disimuló sola y por eso casi se pasa por alto: el watcher propio de
+Roslyn terminó viendo el archivo, y el gate siguiente sí reportó el error. O sea que era una
+**carrera**, no una falla determinista — la peor forma de tener este bug, porque se arregla solo lo
+suficiente como para que nadie lo mire.
+
+**Y una cuarta, en el verificador mismo, que conviene dejar escrita porque es la más incómoda.** El
+arnés daba por probado que "el gate vio el error inyectado" buscándolo en `blockingSample` del
+evento del gate. Ese campo trae **tres** items elegidos sobre todo el workspace y ordenados por
+ruta, así que cualquier cosa bajo `src/Api` ordena antes que `src/Domain` y el archivo inyectado no
+aparecía nunca. El arnés reportaba `MAL` un punto que sí se cumplía. Es un recordatorio barato de
+algo caro: **una verificación también puede estar rota, y una que falla de más entrena a ignorarla**
+igual de rápido que una que aprueba de más. Ahora lee los contadores de la propia iteración de
+revisión; `blockingSample` vuelve a ser lo que era, una comodidad para quien lee el log.
+
+**Cuatro hallazgos más que ningún documento anticipaba:**
+
+1. **El `tools:` del frontmatter de un subagente también filtra las tools MCP.** Las tres plantillas
+   de capa decían `tools: Read, Write, Edit, Glob, Grep` y habrían producido agentes ciegos con el
+   servidor conectado al lado. Es la clase de error que no se encuentra leyendo documentación: el
+   campo se llama igual que el de las herramientas built-in y se comporta distinto de lo que uno
+   asume.
+2. **Ver una tool y poder ejecutarla son dos interruptores distintos.** El agente la llamaba y
+   contestaba que necesitaba permiso — que en un transcripto se parece muchísimo a que la tool no
+   exista.
+3. **El campo `hooks` del frontmatter no se aplica; los hooks de `settings.json` sí.** ADR-011 había
+   descartado explícitamente las reglas de sesión porque "no distinguen al agente de dominio del de
+   API". El argumento era correcto y dejó de aplicar solo: el orquestador corre **un agente por
+   proceso**, así que la sesión *es* el agente. La objeción no se pasó por alto, se disolvió al
+   cambiar cómo se invoca.
+4. **`pwsh` no está instalado en la máquina de desarrollo, y un hook que no se puede lanzar deja
+   pasar la escritura.** La primera versión del hook era PowerShell y no bloqueó nada, sin ruido. El
+   hook pasó a `node`, que ya era dependencia dura. De paso: el `pwsh tools/kill-language-servers.ps1`
+   que `CLAUDE.md` documenta como red de seguridad tampoco correría en esta máquina.
+
+**Lo que confirmó una apuesta anterior:** el grafo no cambió una sola línea para que los adaptadores
+encajaran. La frontera estaba probada desde adentro con 124 tests, y del otro lado apareció un
+proceso real sin que `Orchestrator.Application` se enterara. Es la regla de oro 3 cobrando su
+segundo dividendo, después del de cronograma del Bloque 2.
+
+**Y un dato que despeja D11:** el spec analyzer real produjo un plan que el parser leyó al primer
+intento —6 tareas, todos los criterios cubiertos— contra un formato que hasta ahora solo se había
+ejercitado con fixtures escritos a mano.
+
+**Lo que quedó abierto, dicho:** D12 (el orquestador no arma el esqueleto de la solución generada) y
+D13 (el servidor de TypeScript necesita un `node_modules` que todavía no existe). Las dos bloquean el
+Bloque 5 y las dos son suyas: definen el layout del proyecto generado, que es precisamente lo que ese
+bloque tiene que decidir.
 
 ### ✅ Bloque 3 — El grafo y el Spec Analyzer (2026-08-09)
 

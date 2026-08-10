@@ -119,7 +119,7 @@ aplicalo directo (en código nuevo que estés generando vos).
 | `specs/` | Specs SDD de entrada. Hoy: el gestor de tareas de ADR-009 |
 | `docs/` | Documentos de diseño que no son ADR ni referencia técnica. Hoy: el contrato del servidor MCP |
 | `docs/prompts/` | Un prompt de arranque por bloque del `ROADMAP.md`, escrito al cerrar el bloque anterior |
-| `templates/` | Plantillas que el orquestador inyecta en el workspace generado: el `CLAUDE.md` de la app y las definiciones de subagente de `templates/agents/` |
+| `templates/` | Plantillas que el orquestador inyecta en el workspace generado: el `CLAUDE.md` de la app, las definiciones de subagente de `templates/agents/` y el hook de alcance de archivos de `templates/hooks/` |
 | `output/` | **Gitignoreado y desechable.** Ahí escribe el orquestador. Se borra y regenera de cero en cada corrida (ADR-008) |
 | `logs/` | Gitignoreado. Log estructurado JSONL de las corridas |
 | `orquestador-agentes-briefing.md` | El briefing original del desafío. Registro de origen, no se edita |
@@ -131,12 +131,17 @@ el orquestador no está haciendo su trabajo y eso es el bug a arreglar.
 
 ```
 dotnet build src/Orchestrator.slnx
-dotnet test  src/Orchestrator.slnx     # 124 tests, sin red, sin `claude`, sin language servers
+dotnet test  src/Orchestrator.slnx     # 218 tests, sin red, sin `claude`, sin language servers
 ```
 
 La suite completa es la verificación de la regla de oro 3, así que correrla entera es lo
-normal. Ninguna de las cuatro tandas pasa de un segundo; si una tarda minutos, está invocando
-algo real. Para comprobarlo literalmente, sacar `claude` del `PATH` y volver a correrla.
+normal. Si una tanda tarda minutos, está invocando algo real. Para comprobarlo literalmente,
+sacar `claude` del `PATH` y volver a correrla.
+
+Una sola tanda —`Orchestrator.Agents.Tests`— tarda unos segundos en vez de milisegundos, porque
+lanza `node`: es la única forma de testear el hook de alcance de archivos como lo que es, un
+script cuyo único comportamiento interesante es su código de salida. La regla de oro 3 prohíbe
+`claude -p` y los language servers reales; `node` no es ninguno de los dos.
 
 **La verificación manual de la capa LSP** — arranca servidores reales contra los fixtures rotos
 a propósito de `fixtures/`, consulta las cinco tools y comprueba las respuestas:
@@ -158,8 +163,21 @@ dotnet run --project src/Orchestrator.LspServer -- --urls=http://127.0.0.1:5599 
 curl http://127.0.0.1:5599/health
 ```
 
+**La verificación manual del pipeline** — corre el grafo real con los adaptadores reales sobre un
+spec mínimo, inyecta un error después del primer turno del agente de dominio y comprueba que el
+loop de revisión lo devuelve y lo corrige:
+
+```
+dotnet run --project src/Orchestrator.PipelineVerification
+```
+
+Es la evidencia del criterio de salida del Bloque 4. **Invoca `claude -p` y gasta cuota**, así que
+tampoco es un test. Una corrida son ~7 turnos de agente y varios minutos.
+
 **Si algo quedó vivo** (un language server huérfano bloquea el `bin/` en el próximo build y
-mantiene handles sobre `output/`): `pwsh tools/kill-language-servers.ps1`.
+mantiene handles sobre `output/`): `tools/kill-language-servers.ps1`. **Ojo: `pwsh` no está
+instalado en esta máquina** —lo descubrió el Bloque 4, porque un hook que lo invocaba falló en
+silencio—, así que el script se corre con `powershell.exe -File`.
 
 Pendiente hasta el Bloque 5:
 

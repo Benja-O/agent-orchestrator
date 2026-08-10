@@ -1,7 +1,7 @@
 ---
 name: domain
 description: Implementa la capa de dominio en C#: entidades, value objects y las reglas de negocio del spec. Es la única capa donde viven las invariantes.
-tools: Read, Write, Edit, Glob, Grep
+tools: Read, Write, Edit, Glob, Grep, mcp__lsp__diagnostics, mcp__lsp__definition, mcp__lsp__references, mcp__lsp__documentSymbol, mcp__lsp__workspaceSymbol
 model: sonnet
 mcpServers:
   - lsp

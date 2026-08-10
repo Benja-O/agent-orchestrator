@@ -2,9 +2,9 @@
 
 > **Qué es este documento.** La interfaz entre el servidor MCP que envuelve los language servers y sus dos consumidores. Es un contrato: lo implementa `Orchestrator.Lsp` de un lado y lo consumen los agentes de capa del otro. El **porqué** de cada decisión vive en `DECISIONS.md` (ADR-004, ADR-005, ADR-006, ADR-010); acá va el **qué**.
 >
-> **Estado a 2026-08-09: implementado y verificado contra los dos servidores reales.** Lo implementa `src/Orchestrator.LspServer/`. Las firmas del diseño en papel se sostuvieron; se agregó el campo opcional `statusDetail` y un endpoint `/health` fuera del contrato MCP, ambos registrados en ADR-010.
+> **Estado a 2026-08-10: implementado y verificado contra los dos servidores reales.** Lo implementa `src/Orchestrator.LspServer/`. Las firmas del diseño en papel se sostuvieron; se agregó el campo opcional `statusDetail` y un endpoint `/health` fuera del contrato MCP, ambos registrados en ADR-010. El Bloque 4 lo consumió por primera vez en un loop de revisión y encontró dos formas más de veredicto falso, las dos por el estado del documento; están abajo y las dos están cerradas.
 >
-> **Para verlo funcionar:** `dotnet run --project src/Orchestrator.LspServer.ManualVerification`. Arranca el servidor sobre los fixtures rotos a propósito de `fixtures/`, consulta las cinco tools y comprueba las respuestas. Arranca language servers reales, así que no es parte de la suite de tests (`AI.md`, regla de oro 3).
+> **Para verlo funcionar:** `dotnet run --project src/Orchestrator.LspServer.ManualVerification`. Arranca el servidor sobre los fixtures rotos a propósito de `fixtures/`, consulta las cinco tools, arregla un archivo en disco y crea otro roto a mitad de sesión para comprobar que el veredicto sigue al disco. Arranca language servers reales, así que no es parte de la suite de tests (`AI.md`, regla de oro 3).
 
 ## Los dos consumidores
 
@@ -115,6 +115,22 @@ No estaba en el diseño en papel. Se agregó durante el Bloque 2 por una razón 
 Los dos extremos no escriben igual la misma ruta de Windows. Nosotros emitimos `file:///F:/proyecto/src/tarea.ts`; `typescript-language-server` contesta sobre `file:///f%3A/proyecto/src/tarea.ts`.
 
 Comparadas como texto son archivos distintos, y el daño es preciso: los diagnostics publicados quedan bajo una clave que nadie consulta y **el archivo parece limpio**. Es el mismo falso verde de `status`, llegando por normalización en vez de por timing. Toda conversión pasa por un único lugar (`WorkspacePaths`) y tiene test de regresión.
+
+##### Las dos vías que encontró el Bloque 4, las dos por el estado del documento
+
+Consultar la misma tool dos veces en una corrida —que es lo que hace un loop de revisión— destapó
+dos formas más de que la respuesta sea falsa, y ninguna tiene que ver con el timing ni con las
+rutas. **Las dos son responsabilidad del servidor y ya están cerradas**; se documentan acá porque
+son propiedades que el consumidor da por sentadas sin decirlo.
+
+| Situación | Qué contestaba | Por qué |
+|---|---|---|
+| El agente **arregla** un archivo y se vuelve a consultar | El mismo error, para siempre | Un language server contesta sobre el texto que le pasaron, no sobre el archivo. Sin notificarle el cambio, el veredicto queda congelado. **Falso rojo:** no aprueba código roto, pero manda a un agente a rehacer trabajo ya hecho y lo da por agotado |
+| El agente **crea** un archivo nuevo y se consulta | Ningún diagnostic de ese archivo | Un archivo que aparece después de cargar la solución no está en el sistema de proyectos, y abrirlo no lo mete ahí. Nadie lo analiza, y eso llega como "sin errores". **Falso verde**, y el caso importa porque los agentes crean archivos todo el tiempo |
+
+La garantía que el contrato ofrece, entonces, dicha explícitamente: **cada respuesta de
+`diagnostics` refleja el estado del disco en el momento de la consulta**, incluidos los archivos
+creados o modificados después de que el servidor arrancó.
 
 #### Truncado y orden
 
