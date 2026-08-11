@@ -227,6 +227,45 @@ public sealed class LspQueryServiceTests : IDisposable
             () => CreateService(new FakeLanguageServerSession(DiagnosticSourceNames.Roslyn, ".cs"))
                 .GetWorkspaceSymbolsAsync("   ", CancellationToken.None));
 
+    /// <summary>
+    /// A server that owns nothing in this workspace is not asked, and cannot spoil the answer.
+    /// </summary>
+    /// <remarks>
+    /// The regression guard for what block 5's first full run produced. The frontend folder had no
+    /// TypeScript in it yet, so <c>typescript-language-server</c> had no project loaded and
+    /// answered <c>workspace/symbol</c> with an error — which propagated and failed a query about
+    /// the C# that Roslyn had loaded perfectly. It landed on the API agent, whose own template
+    /// tells it to look a domain symbol up before writing against it, so the tool failed exactly
+    /// where it was most needed.
+    /// </remarks>
+    [Fact]
+    public async Task WorkspaceSymbol_does_not_ask_a_server_that_owns_nothing_here()
+    {
+        var documentFullPath = _workspace.WriteFile("src/Domain/Tarea.cs", "class Tarea { }");
+
+        var roslyn = new FakeLanguageServerSession(DiagnosticSourceNames.Roslyn, ".cs");
+        roslyn.WorkspaceSymbols.Add(new LspSymbolInformation
+        {
+            Name = "Tarea",
+            Kind = 5,
+            Location = new LspLocation { Uri = new Uri(documentFullPath).AbsoluteUri, Range = Range(0, 6) },
+        });
+
+        var typescript = new FakeLanguageServerSession(DiagnosticSourceNames.TypeScript, ".ts")
+        {
+            FailsWorkspaceSymbols = true,
+        };
+
+        var response = await CreateService(roslyn, typescript)
+            .GetWorkspaceSymbolsAsync("Tarea", CancellationToken.None);
+
+        Assert.Equal(IndexingStatusNames.Ready, response.Status);
+        Assert.Equal("Tarea", Assert.Single(response.Items).Name);
+        Assert.False(
+            typescript.WasAskedForWorkspaceSymbols,
+            "the TypeScript server owns no document here and should not have been queried.");
+    }
+
     private LspQueryService CreateService(params ILanguageServerSession[] sessions) =>
         CreateService(new FakeLanguageServerRegistry(sessions));
 

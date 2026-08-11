@@ -198,9 +198,17 @@ que las elige el agente de API; el arnés imprime todos los intercambios HTTP pa
 equivocada se distinga de una invariante rota.
 
 **Si algo quedó vivo** (un language server huérfano bloquea el `bin/` en el próximo build y
-mantiene handles sobre `output/`): `tools/kill-language-servers.ps1`. **Ojo: `pwsh` no está
-instalado en esta máquina** —lo descubrió el Bloque 4, porque un hook que lo invocaba falló en
-silencio—, así que el script se corre con `powershell.exe -File`.
+mantiene handles sobre `output/`):
+
+```
+powershell.exe -ExecutionPolicy Bypass -File tools/kill-language-servers.ps1
+```
+
+**Las dos partes del comando son cicatrices, no ceremonia.** `pwsh` no está instalado en esta
+máquina —lo descubrió el Bloque 4, porque un hook que lo invocaba falló en silencio— y la política
+de ejecución de PowerShell rechaza el script sin `-ExecutionPolicy Bypass`, cosa que descubrió el
+Bloque 5 al necesitarlo. Es el mismo patrón dos veces: **la red de seguridad documentada no era
+ejecutable, y solo se nota el día que hace falta.**
 
 Dependencias de entorno:
 

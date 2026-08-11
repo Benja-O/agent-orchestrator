@@ -47,8 +47,10 @@ la máquina de estados sin gastar cuota del plan Pro (ADR-001).
    arneses de verificación manual —están nombrados así a propósito—, y
    `Orchestrator.Agents.Tests` lanza `node` para ejercitar el hook de alcance de archivos y el
    runner de procesos (ver la excepción de la regla 3).
-   *Si algo quedó vivo:* `tools/kill-language-servers.ps1` — con `powershell.exe -File`, no con
-   `pwsh`, que no está instalado en esta máquina (Bloque 4).
+   *Si algo quedó vivo:* `powershell.exe -ExecutionPolicy Bypass -File tools/kill-language-servers.ps1`.
+   Las dos partes son cicatrices: `pwsh` no está instalado (Bloque 4) y la política de ejecución
+   rechaza el script sin el flag (Bloque 5). Una red de seguridad que no arranca es una red de
+   seguridad que no está.
 
 3. **El grafo se testea sin invocar un solo agente real.** `FakeAgentRunner` y
    `FakeLanguageServer` comparten un `FakeWorkspace`, así que el agente muta el estado que el

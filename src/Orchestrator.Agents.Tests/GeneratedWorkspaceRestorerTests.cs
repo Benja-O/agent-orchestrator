@@ -33,6 +33,37 @@ public sealed class GeneratedWorkspaceRestorerTests
     }
 
     /// <summary>
+    /// npm is launched by full path, never by name.
+    /// </summary>
+    /// <remarks>
+    /// The regression guard for the failure that stopped block 5's first real run. <c>npm.cmd</c>
+    /// derives its own location from <c>%~dp0</c>, which for a bare name expands to the caller's
+    /// working directory — so npm went looking for <c>npm-cli.js</c> inside
+    /// <c>output/src/Frontend/node_modules</c> and reported a missing module. The message names
+    /// the workspace, so it reads as a broken install rather than as a launch that lost its own
+    /// path.
+    /// </remarks>
+    [Fact]
+    public async Task Npm_is_launched_by_full_path_because_a_shim_started_by_name_loses_its_own_location()
+    {
+        var recorder = new RecordingProcessRunner(exitCode: 0);
+
+        await new GeneratedWorkspaceRestorer(recorder, WorkspaceRoot).RestoreAsync(CancellationToken.None);
+
+        // Skipped where npm is genuinely absent: the locator falls back to the bare name, and
+        // asserting otherwise would fail for the environment rather than for the behaviour.
+        if (ExecutableLocator.Resolve(OperatingSystem.IsWindows() ? "npm.cmd" : "npm") is var resolved
+            && !Path.IsPathRooted(resolved))
+        {
+            return;
+        }
+
+        Assert.True(
+            Path.IsPathRooted(recorder.Requests[1].ExecutablePath),
+            $"npm was launched as '{recorder.Requests[1].ExecutablePath}' rather than by full path.");
+    }
+
+    /// <summary>
     /// npm runs inside the frontend folder, which is the whole point of running it at all.
     /// </summary>
     /// <remarks>

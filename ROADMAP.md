@@ -158,11 +158,14 @@ determinista y no depende de que el modelo reporte bien lo que ve — preguntarl
 tools es exactamente el tipo de evidencia que este proyecto decidió no aceptar en ningún otro lado.
 
 **R4 — El gate verifica compilación, no corrección.** Una regla de negocio puede estar
-ausente y el código compilar perfecto (ADR-004, consecuencia final). El proyecto ya lo tiene
-contemplado —el endpoint que intenta violar la invariante de ADR-009 es exactamente esa
-verificación— pero conviene que no se pierda de vista al llegar apurado al Bloque 5. Es la
-diferencia entre "el pipeline produce código que compila" y "el pipeline produce la app
-pedida".
+ausente y el código compilar perfecto (ADR-004, consecuencia final). Es la diferencia entre "el
+pipeline produce código que compila" y "el pipeline produce la app pedida".
+
+*Mitigación en firme desde el Bloque 5:* `Orchestrator.GeneratedAppVerification` levanta la app
+generada y ejercita CA-06 y CA-08 **por HTTP** — crea dos tareas, declara la dependencia, intenta
+completar la bloqueada y comprueba el rechazo, que el error nombre al prerrequisito, y que el
+estado no haya cambiado. No gasta cuota. El riesgo no desaparece —el gate sigue sin verificar
+corrección, y eso es estructural— pero deja de ser una advertencia y pasa a ser un comando.
 
 ---
 
@@ -184,8 +187,10 @@ retomar si el proyecto continuara.
 | D9 | Volver a una capa anterior re-invoca también a las posteriores desde cero, aunque su código no haya cambiado | Bloque 3, `GraphRunner` | Si el costo por corrida se vuelve el problema. Requiere saber qué archivos tocó cada agente, que hoy el grafo no sabe |
 | D10 | La detección de no-progreso es heurística cuando el gate trunca: la huella solo cubre la ventana visible | Bloque 3, ADR-014 | Si aparece una corrida real con cientos de diagnostics. Hoy la respalda el límite de iteraciones y el log registra `truncated` |
 | D11 | El formato de salida del Spec Analyzer vive en dos lugares: el prompt de la plantilla y el parser | Bloque 3, ADR-014 | Si el parser empieza a fallar contra respuestas reales. *El Bloque 4 le dio la primera evidencia real y salió bien: el plan del agente parseó al primer intento.* Se cobra con un test que valide la plantilla contra los fixtures |
-| **D12** | **El orquestador no arma el esqueleto de la solución generada** (`.slnx`, `.csproj`), y Roslyn carga una solución, no una carpeta de archivos sueltos. Sin esqueleto, el gate no analiza nada — y "no analiza nada" se ve igual que "está limpio" | Bloque 4 | **Bloquea el Bloque 5.** Hoy lo escribe el arnés de verificación; decidir el layout del proyecto generado es trabajo de ese bloque, y adelantarlo acá habría sido decidirlo de casualidad |
-| D13 | El servidor de TypeScript se apaga en la verificación del Bloque 4: necesita estar instalado en el `node_modules` del workspace analizado, que en una app recién generada no existe | Bloque 4 | Bloque 5, junto con D12. Ojo con la interacción: el contrato contesta `indexing` para todo el scope mientras **algún** servidor indexa, así que un servidor que nunca puede quedar listo impide que el gate dé veredicto sobre el código que sí lo está |
+| ~~D12~~ | ~~El orquestador no arma el esqueleto de la solución generada~~ | Bloque 4 | ✅ **Cobrada el 2026-08-11 (ADR-016).** El esqueleto vive en `templates/scaffold/` y lo copia `GeneratedWorkspacePreparer` con todo lo demás. Lo escribe el orquestador y no un agente por tres razones que el repo ya tenía escritas sin darse cuenta —el layout es de `LayerMap`, el hook prohíbe escribir en la raíz, un `.csproj` no cita ninguna `RN-nn`— y por una cuarta que decide: **es el aparato del gate, no producto** |
+| ~~D13~~ | ~~El servidor de TypeScript necesita un `node_modules` que en una app recién generada no existe~~ | Bloque 4 | ✅ **Cobrada el 2026-08-11 (ADR-016).** `GeneratedWorkspaceRestorer` corre `npm ci` en `src/Frontend`, y `LspServerSettings.TypeScriptProjectPath` apunta el servidor ahí. Verificado con `typescript-language-server` **no instalado globalmente**: el log muestra que se lanzó desde el `node_modules` del workspace, así que la deuda está cerrada y no pasando por casualidad. La interacción temida no llegó a pasar —`LspQueryService` ya excluía las sesiones sin documentos en scope— pero **apareció otra que ninguna de las dos deudas anticipaba**: ver D15 |
+| D14 | El CLI corre desde el repositorio, no desde una instalación: busca `templates/` y el assembly del servidor MCP caminando hacia arriba desde su propio ejecutable | Bloque 5, `RepositoryLayout` | Si el orquestador tuviera que distribuirse. Fuera del alcance de un desafío que se evalúa corriendo el repo |
+| D15 | La plomería que el orquestador inyecta en el workspace es indistinguible del código de la app para un language server | Bloque 5, ADR-016 | ✅ **Cerrada en el mismo bloque, y vale registrarla porque casi mata la primera corrida.** `.claude/hooks/restrict-to-layer.js` es un `.js` real que `typescript-language-server` reclama como suyo y que **no pertenece a ninguna capa** — un solo diagnostic ahí llega a `LayerMap.Attribute`, no encuentra agente a quien devolvérselo y termina la corrida. `.claude` se sumó a los directorios que el servidor nunca enumera, con test de regresión. Lo general: cualquier archivo que el orquestador deposite en el workspace y que un servidor de lenguaje reclame es una corrida muerta esperando |
 
 ---
 

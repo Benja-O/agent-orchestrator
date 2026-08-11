@@ -203,7 +203,14 @@ public sealed class LspQueryService
 
         var items = new List<SymbolItem>();
 
-        foreach (var session in _registry.Sessions)
+        // Only servers that own something in this workspace get asked, the same way
+        // GetDiagnosticsAsync already filters. Block 5 found out why the hard way: a
+        // typescript-language-server with no project yet answers `workspace/symbol` with an error,
+        // and that error took down a query about the C# the other server had loaded perfectly.
+        // It is the shape of failure this layer keeps producing — one server with nothing to say
+        // poisoning the answer about the code that does — and it lands on the agent whose own
+        // instructions tell it to look a symbol up before writing against it.
+        foreach (var session in _registry.Sessions.Where(candidate => candidate.EnumerateDocuments(_workspacePaths.RootFullPath).Count > 0))
         {
             _registry.EnsureOperational(session);
 

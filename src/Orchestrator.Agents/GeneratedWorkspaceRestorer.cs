@@ -28,8 +28,18 @@ namespace Orchestrator.Agents;
 /// </remarks>
 public sealed class GeneratedWorkspaceRestorer
 {
-    /// <summary>npm ships as a batch file on Windows, and <c>Process.Start</c> does not guess extensions.</summary>
-    private static string NpmExecutable => OperatingSystem.IsWindows() ? "npm.cmd" : "npm";
+    /// <summary>
+    /// npm, by full path.
+    /// </summary>
+    /// <remarks>
+    /// Two Windows-shaped details, both of which cost a failed run to find. npm ships as a batch
+    /// file, and <c>Process.Start</c> does not guess extensions — hence <c>npm.cmd</c>. And a
+    /// batch file started by bare name resolves <c>%~dp0</c> to the caller's working directory, so
+    /// npm looks for its own internals inside the folder it was told to install into. See
+    /// <see cref="ExecutableLocator"/>.
+    /// </remarks>
+    private static string NpmExecutable =>
+        ExecutableLocator.Resolve(OperatingSystem.IsWindows() ? "npm.cmd" : "npm");
 
     private readonly IAgentProcessRunner _processRunner;
     private readonly string _workspaceRoot;

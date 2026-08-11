@@ -87,8 +87,25 @@ public sealed class FakeLanguageServerSession : ILanguageServerSession
     public Task<IReadOnlyList<LspDocumentSymbol>> GetDocumentSymbolsAsync(string documentFullPath, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<LspDocumentSymbol>>(DocumentSymbols);
 
-    public Task<IReadOnlyList<LspSymbolInformation>> GetWorkspaceSymbolsAsync(string query, CancellationToken cancellationToken) =>
-        Task.FromResult<IReadOnlyList<LspSymbolInformation>>(WorkspaceSymbols);
+    /// <summary>Set to make this session behave like a server with no project loaded.</summary>
+    /// <remarks>
+    /// Which is not a hypothetical: it is what <c>typescript-language-server</c> does when the
+    /// frontend folder has no TypeScript in it yet, and answering <c>workspace/symbol</c> with an
+    /// error is how it says so.
+    /// </remarks>
+    public bool FailsWorkspaceSymbols { get; set; }
+
+    /// <summary>Whether anyone asked this session for workspace symbols.</summary>
+    public bool WasAskedForWorkspaceSymbols { get; private set; }
+
+    public Task<IReadOnlyList<LspSymbolInformation>> GetWorkspaceSymbolsAsync(string query, CancellationToken cancellationToken)
+    {
+        WasAskedForWorkspaceSymbols = true;
+
+        return FailsWorkspaceSymbols
+            ? throw new LanguageServerException($"The {SourceName} language server failed to answer 'workspace/symbol'.")
+            : Task.FromResult<IReadOnlyList<LspSymbolInformation>>(WorkspaceSymbols);
+    }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

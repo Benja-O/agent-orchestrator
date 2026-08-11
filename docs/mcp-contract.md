@@ -246,7 +246,7 @@ La distinción es la misma que hace `AI.md` para el orquestador: un archivo que 
 
 ## Ciclo de vida
 
-Los procesos se anidan: **el orquestador lanza el servidor MCP, y el servidor MCP es dueño de los dos language servers** (ADR-013 — el que sostiene las conexiones LSP tiene que ser el que contesta las tool calls). Arrancan al preparar el workspace y se apagan de forma determinista al terminar la corrida, exitosa o no. **Un language server huérfano tras una corrida fallida es un bug**, no un detalle: mantiene abiertos handles sobre `output/`, que ADR-008 exige poder borrar y regenerar de cero. Red de seguridad manual: `pwsh tools/kill-language-servers.ps1`.
+Los procesos se anidan: **el orquestador lanza el servidor MCP, y el servidor MCP es dueño de los dos language servers** (ADR-013 — el que sostiene las conexiones LSP tiene que ser el que contesta las tool calls). Arrancan al preparar el workspace y se apagan de forma determinista al terminar la corrida, exitosa o no. **Un language server huérfano tras una corrida fallida es un bug**, no un detalle: mantiene abiertos handles sobre `output/`, que ADR-008 exige poder borrar y regenerar de cero. Red de seguridad manual: `powershell.exe -ExecutionPolicy Bypass -File tools/kill-language-servers.ps1` — ni `pwsh`, que no está instalado en la máquina de desarrollo, ni sin el flag, que la política de ejecución rechaza.
 
 Los language servers arrancan **en segundo plano**, no durante el arranque del host HTTP: cargar una solución tarda segundos, y la respuesta honesta durante esos segundos es `status: "indexing"` — que requiere que el servidor ya esté contestando para poder decirla.
 
