@@ -22,9 +22,20 @@ namespace Orchestrator.LspServer.LanguageServers;
 /// </remarks>
 public abstract class LanguageServerSession : ILanguageServerSession
 {
+    /// <summary>
+    /// Directories that hold tooling rather than the application, and are never analysed.
+    /// </summary>
+    /// <remarks>
+    /// <c>.claude</c> earns its place for a sharper reason than the rest, and block 5 found it by
+    /// enabling TypeScript over a generated workspace for the first time: the orchestrator injects
+    /// <c>.claude/hooks/restrict-to-layer.js</c>, and a <c>.js</c> file is a document
+    /// <c>typescript-language-server</c> owns. It belongs to no layer, so a single diagnostic in
+    /// it would reach <c>LayerMap.Attribute</c>, find no agent to send it back to, and end the run
+    /// — killed by the orchestrator's own plumbing.
+    /// </remarks>
     private static readonly string[] IgnoredDirectorySegments =
     [
-        "bin", "obj", "node_modules", ".git", ".vs", "dist", "build",
+        "bin", "obj", "node_modules", ".git", ".vs", ".claude", "dist", "build",
     ];
 
     private readonly ILogger _logger;

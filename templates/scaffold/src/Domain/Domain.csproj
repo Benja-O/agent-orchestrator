@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The domain layer of the generated application. Deliberately without a single package
+    reference: the spec puts the business rules in domain code, and a dependency here is the
+    first step towards delegating one of them somewhere it cannot be verified.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

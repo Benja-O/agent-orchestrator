@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Orchestrator.Cli</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Orchestrator.Agents\Orchestrator.Agents.csproj" />
+    <ProjectReference Include="..\Orchestrator.Application\Orchestrator.Application.csproj" />
+    <ProjectReference Include="..\Orchestrator.Domain\Orchestrator.Domain.csproj" />
+    <ProjectReference Include="..\Orchestrator.Lsp\Orchestrator.Lsp.csproj" />
+    <ProjectReference Include="..\Orchestrator.Observability\Orchestrator.Observability.csproj" />
+  </ItemGroup>
+
+  <!--
+    Referenced to be built, not to be linked: ReferenceOutputAssembly="false" keeps ASP.NET Core
+    out of this project's closure while still guaranteeing the MCP server is compiled before a
+    run needs it. Its assembly is launched as a separate process from its own build output, which
+    is where its runtimeconfig.json lives.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Orchestrator.LspServer\Orchestrator.LspServer.csproj"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

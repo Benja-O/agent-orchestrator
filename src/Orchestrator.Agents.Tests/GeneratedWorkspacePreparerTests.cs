@@ -97,6 +97,119 @@ public sealed class GeneratedWorkspacePreparerTests : IDisposable
         Assert.True(Directory.Exists(Path.Combine(_workspaceRoot, "src", "Frontend")));
     }
 
+    /// <summary>
+    /// The scaffold of ADR-016, checked as what it is: the gate's own apparatus.
+    /// </summary>
+    /// <remarks>
+    /// Roslyn opens a solution, not a folder of loose files. Without these files the C# language
+    /// server loads nothing, reports nothing, and the gate reads that as clean code — the false
+    /// green through the door neither ADR-006 nor block 2 had covered.
+    /// </remarks>
+    [Theory]
+    [InlineData("App.slnx")]
+    [InlineData("src/Domain/Domain.csproj")]
+    [InlineData("src/Api/Api.csproj")]
+    [InlineData("src/Frontend/package.json")]
+    [InlineData("src/Frontend/package-lock.json")]
+    [InlineData("src/Frontend/tsconfig.json")]
+    public void The_scaffold_the_language_servers_need_is_there_before_any_agent_runs(string relativePath)
+    {
+        Preparer().Prepare(Spec);
+
+        var expected = Path.Combine(_workspaceRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
+
+        Assert.True(File.Exists(expected), $"The scaffold did not produce '{relativePath}'.");
+    }
+
+    /// <summary>
+    /// The solution names both C# projects, so Roslyn has both to load.
+    /// </summary>
+    /// <remarks>
+    /// A solution that lists only one project is the subtlest version of the same failure: the
+    /// gate works, answers confidently, and is blind to a whole layer. The API agent calling a
+    /// domain method that does not exist — the case this project is built to catch — would go
+    /// through.
+    /// </remarks>
+    [Fact]
+    public void The_solution_names_every_layer_that_compiles()
+    {
+        Preparer().Prepare(Spec);
+
+        var solution = File.ReadAllText(Path.Combine(_workspaceRoot, "App.slnx"));
+
+        Assert.Contains("src/Domain/Domain.csproj", solution, StringComparison.Ordinal);
+        Assert.Contains("src/Api/Api.csproj", solution, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The scaffold puts its projects exactly where <see cref="LayerMap"/> says each layer lives.
+    /// </summary>
+    /// <remarks>
+    /// These are two independent statements of the same layout — one in
+    /// <c>templates/scaffold/</c>, one in <c>LayerMap.Default</c> — and they only stay in step
+    /// because this test fails when they do not. Drift is quiet and expensive: a diagnostic in a
+    /// directory no layer owns stops the run, and one in a directory the wrong layer owns goes
+    /// back to an agent that cannot fix it.
+    /// </remarks>
+    [Fact]
+    public void The_scaffold_puts_each_project_inside_the_folder_its_layer_owns()
+    {
+        Preparer().Prepare(Spec);
+
+        var layerMap = LayerMap.Default;
+
+        Assert.True(layerMap.TryResolve("src/Domain/Domain.csproj", out var domain));
+        Assert.Equal(Layer.Domain, domain);
+
+        Assert.True(layerMap.TryResolve("src/Api/Api.csproj", out var api));
+        Assert.Equal(Layer.Api, api);
+
+        Assert.True(layerMap.TryResolve("src/Frontend/package.json", out var frontend));
+        Assert.Equal(Layer.Frontend, frontend);
+    }
+
+    /// <summary>
+    /// The frontend's language server has to come from the workspace's own node_modules, so the
+    /// package the scaffold installs is the one <c>TypeScriptLanguageServerSession</c> looks for.
+    /// </summary>
+    [Fact]
+    public void The_frontend_scaffold_brings_its_own_language_server()
+    {
+        Preparer().Prepare(Spec);
+
+        var packageJson = File.ReadAllText(Path.Combine(_workspaceRoot, "src", "Frontend", "package.json"));
+
+        Assert.Contains("typescript-language-server", packageJson, StringComparison.Ordinal);
+        Assert.Contains("react", packageJson, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A left-over <c>node_modules</c> beside the templates must not be copied into the workspace.
+    /// </summary>
+    /// <remarks>
+    /// Cheap insurance against a slow, confusing failure: a stray install in
+    /// <c>templates/scaffold/</c> would otherwise make every run copy thousands of files, and
+    /// then hand the language server a source tree it was never meant to analyse.
+    /// </remarks>
+    [Fact]
+    public void A_stray_node_modules_beside_the_templates_does_not_travel()
+    {
+        var strayDirectory = Path.Combine(TemplatesDirectory, "scaffold", "src", "Frontend", "node_modules", "stray");
+        Directory.CreateDirectory(strayDirectory);
+        File.WriteAllText(Path.Combine(strayDirectory, "index.js"), "// should not be copied");
+
+        try
+        {
+            Preparer().Prepare(Spec);
+
+            Assert.False(Directory.Exists(Path.Combine(_workspaceRoot, "src", "Frontend", "node_modules")));
+        }
+        finally
+        {
+            Directory.Delete(Path.Combine(TemplatesDirectory, "scaffold", "src", "Frontend", "node_modules"), recursive: true);
+        }
+    }
+
     [Fact]
     public void The_server_is_declared_and_pre_enabled_for_anyone_opening_the_workspace_by_hand()
     {

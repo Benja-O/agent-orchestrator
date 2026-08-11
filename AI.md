@@ -4,12 +4,12 @@
 > costo, formato de commits) viven en `CLAUDE.md`. Este archivo es exclusivamente referencia
 > técnica del codebase: arquitectura, convenciones, tipos, anti-patrones.
 >
-> **Estado a 2026-08-10: describe código real, salvo `Orchestrator.Cli`.** El Bloque 2 construyó
+> **Estado a 2026-08-11: describe código real, entero.** El Bloque 2 construyó
 > `Orchestrator.LspServer`; el Bloque 3, `Orchestrator.Domain`, `Orchestrator.Application`,
 > `Orchestrator.TestSupport` y `Orchestrator.Observability`; el Bloque 4, los dos adaptadores que
-> hablan con el mundo exterior —`Orchestrator.Agents` y `Orchestrator.Lsp`—. Lo único que sigue
-> siendo contrato a cumplir y no descripción es `Orchestrator.Cli`, Bloque 5. Está marcado como tal
-> en la tabla de proyectos.
+> hablan con el mundo exterior —`Orchestrator.Agents` y `Orchestrator.Lsp`—; el Bloque 5,
+> `Orchestrator.Cli`, que era lo último que quedaba como contrato a cumplir. Ya no hay ninguna
+> fila de la tabla de proyectos que describa algo que no existe.
 >
 > Cualquier divergencia entre este archivo y el código es un bug de uno de los dos, y hay que
 > resolverla explícitamente, no dejarla pasar.
@@ -57,9 +57,11 @@ la máquina de estados sin gastar cuota del plan Pro (ADR-001).
    Esta regla **existe por ADR-001**: el límite de 5 h del plan Pro se agota justo cuando más
    se necesita, depurando la máquina de estados. No es preferencia de estilo — es la
    diferencia entre poder iterar el grafo cien veces por día y no poder.
-   *Verificable con:* la suite completa corre sin red y sin `claude` en el `PATH` — **218 tests**,
-   medido con `claude` efectivamente sacado del `PATH`. Si un test tarda minutos, está invocando
-   algo real.
+   *Verificable con:* la suite completa corre sin red y sin `claude` en el `PATH` — **252 tests**.
+   Si un test tarda minutos, está invocando algo real. Ojo con lo que el Bloque 5 sumó al
+   workspace generado: `dotnet restore` y `npm ci` **sí** necesitan red, y por eso viven en
+   `GeneratedWorkspaceRestorer`, que la suite ejercita contra un runner de procesos guionado y
+   nunca contra npm.
    Además hay tests de arquitectura (`ArchitectureTests`, en `Orchestrator.Application.Tests`)
    que fallan el build si aparece una implementación de `IAgentRunner` o
    `ILanguageServerGateway` fuera de `Orchestrator.TestSupport`, **y si la suite del grafo llega a
@@ -88,11 +90,11 @@ la máquina de estados sin gastar cuota del plan Pro (ADR-001).
 |---|---|---|
 | **`Orchestrator.Domain`** ✅ | Modelo del grafo y del pipeline: `NodeId`, `RunId`, `Layer`, `LayerMap`, `GraphState`, `Diagnostic`, `DiagnosticSet`, `GateVerdict`, `TaskPlan`, `SpecDocument`, `Result<T>`, `GraphPolicy`, `ReviewPolicy`, los `RunEvent` y las interfaces `IAgentRunner` / `ILanguageServerGateway` / `IRunObserver`. | Nada |
 | **`Orchestrator.Application`** ✅ | `GraphRunner` (la máquina de estados), `GateEvaluator` (la política de `indexing`), `SpecParser`, `PlanParser`, `AgentPrompts`. | Domain |
-| **`Orchestrator.Agents`** ✅ | `ClaudeCodeAgentRunner` sobre `claude -p`, `ClaudeCodeCommandLine` (los flags, como función pura), `GeneratedWorkspacePreparer` y `AgentEnvironmentCheck` (los sondeos de arranque). | Domain |
+| **`Orchestrator.Agents`** ✅ | `ClaudeCodeAgentRunner` sobre `claude -p`, `ClaudeCodeCommandLine` (los flags, como función pura), `GeneratedWorkspacePreparer` y `GeneratedWorkspaceRestorer` (el workspace de cero y el esqueleto de ADR-016), y `AgentEnvironmentCheck` (los sondeos de arranque). | Domain |
 | **`Orchestrator.Lsp`** ✅ | `LspServerHost` (dueño del proceso del servidor MCP y de la sesión cliente), `McpLanguageServerGateway` y `DiagnosticTranslation`. Traduce el `DiagnosticItem` del contrato al `Diagnostic` del dominio. | Domain |
 | **`Orchestrator.LspServer`** ✅ | El servidor MCP: host ASP.NET Core que expone las cinco tools de `docs/mcp-contract.md` por HTTP y es dueño de los dos language servers. Habla LSP con `StreamJsonRpc`. **No depende de `Domain`** — es agnóstico del proyecto que analiza (ADR-010, ADR-013). | Nada del repo |
 | **`Orchestrator.Observability`** ✅ | `JsonlRunObserver` y `ConsoleRunObserver`: las dos lecturas del mismo flujo de eventos (ADR-015). Existe como proyecto aparte para que escribir archivos quede fuera de `Application`. | Domain |
-| `Orchestrator.Cli` ⬜ | *Bloque 5.* Host de consola: parseo de argumentos, wiring de dependencias, código de salida. Es el único con `Main` del lado del orquestador. | Todos |
+| **`Orchestrator.Cli`** ✅ | Host de consola: `CommandLineParser` (los argumentos, como función pura), `RepositoryLayout` y el wiring. Es el único `Main` del lado del orquestador, y no tiene lógica de orquestación: arma los colaboradores en el único orden que funciona y traduce la terminación a código de salida. | Todos |
 | **`Orchestrator.TestSupport`** ✅ | `FakeWorkspace` (el escenario compartido), `FakeAgentRunner`, `FakeLanguageServer`, `SteppingTimeProvider`, `RecordingRunObserver`, builders de diagnostics. **Solo lo referencian proyectos de test**, nunca uno de producción. | Domain |
 
 Cada proyecto de producción tiene su `.Tests` correspondiente.
@@ -103,6 +105,7 @@ Además, fuera del árbol de producción:
 |---|---|
 | `Orchestrator.LspServer.ManualVerification` | La verificación manual del Bloque 2, en un comando. **Arranca language servers reales, así que no es un test y no está en la suite** (regla de oro 3). Es la evidencia reproducible del criterio de salida. |
 | `Orchestrator.PipelineVerification` | Lo mismo para el Bloque 4: corre el grafo real con los adaptadores reales sobre un spec mínimo, inyecta un error después del primer turno del agente de dominio y comprueba en los eventos que el loop de revisión lo devolvió y lo corrigió. **Invoca `claude -p` y gasta cuota**, así que tampoco es un test. |
+| `Orchestrator.GeneratedAppVerification` | La tercera parte del criterio de salida del Bloque 5, que es la única que el gate no puede contestar: levanta la app generada y comprueba **por HTTP** que completar una tarea con un prerrequisito abierto se rechaza (CA-06), que el error dice cuál bloquea (CA-08) y que la operación rechazada no dejó rastro. No gasta cuota; está fuera de la suite porque necesita un `output/` que solo existe después de una corrida. Las rutas van por argumento, porque el spec no nombra endpoints a propósito y las elige el agente de API. |
 | `fixtures/` | Código roto a propósito —un `.cs` y un `.ts`— contra el que se verifica la capa LSP. No lo compila nadie más. |
 | `tools/` | Scripts de operación. Hoy: matar language servers que hayan quedado vivos. |
 
@@ -133,6 +136,12 @@ real de un fake, la regla de oro 3 se cumple sola.
   `src/Api/`, `src/Frontend/`.
   **Un diagnostic en un archivo que no cae en ninguna capa detiene la corrida**, no se
   descarta: no hay agente al que devolvérselo, así que avanzar sería aprobar código roto.
+  **Su consecuencia incómoda la encontró el Bloque 5:** el orquestador mete plomería propia
+  *dentro* del workspace —`.claude/hooks/restrict-to-layer.js` es un `.js` de verdad— y para un
+  language server eso es código de la app como cualquier otro. Un diagnostic ahí no tiene dueño
+  por construcción, porque los agentes tienen prohibido escribir fuera de su capa. Por eso
+  `.claude` está en los directorios que el servidor nunca enumera, al lado de `.git` y
+  `node_modules` (ADR-016).
 
 **Terminación — obligatoria, no opcional.** Todo ciclo del grafo tiene que poder terminar por
 tres vías, y las tres se implementan a mano porque no hay framework que las provea
@@ -292,6 +301,9 @@ esperas de indexado porque son rutina y muestra las siguientes porque dejan de s
 | Consultar un archivo creado después de cargar la solución sin anunciarlo con `workspace/didChangeWatchedFiles` | Falso verde: no está en el sistema de proyectos, nadie lo analiza, y "nadie lo analiza" llega al gate como "compila". Los agentes crean archivos todo el tiempo | Bloque 4 |
 | Reconsultar el gate mientras contesta `indexing`, sin techo de intentos | Esperar es obligatorio; esperar sin límite es un cuelgue indistinguible de un servidor muerto | ADR-013 |
 | Descartar un diagnostic cuyo archivo no cae en ninguna capa | No hay agente al que devolvérselo, así que avanzar es aprobar código roto | ADR-010 |
+| Dejar que el gate analice la plomería que el orquestador inyecta en el workspace | El hook de alcance es un `.js` real que ninguna capa posee y ningún agente puede tocar: un diagnostic ahí mata la corrida, y lo hace por culpa del orquestador | ADR-016, Bloque 5 |
+| Que un agente escriba el esqueleto de la solución (`.slnx`, `.csproj`, `package.json`) | Es el aparato del gate, no producto: si sale mal, el gate contesta con seguridad sobre un subconjunto del código y el resto parece limpio | ADR-016 |
+| Arrancar un language server sobre un workspace sin restaurar | Roslyn reporta como error cada tipo detrás de una referencia sin resolver, así que la primera revisión llega con decenas de diagnostics que el agente no causó — falso rojo pagado en turnos | ADR-016 |
 | Que el grafo tome una decisión leyendo el texto que devolvió un agente | Es la superficie que no se puede testear; el veredicto lo da el gate, no el agente. Única excepción: el plan del spec analyzer | ADR-014 |
 | Editar a mano algo en `output/` para que el pipeline avance | `output/` es desechable por construcción; si hace falta tocarlo, el orquestador no está haciendo su trabajo | ADR-008 |
 | `DateTime.UtcNow` fuera de adaptadores, o un reloj propio en vez de `TimeProvider` | Vuelve no testeables los timeouts y los reintentos | Oro 4 |

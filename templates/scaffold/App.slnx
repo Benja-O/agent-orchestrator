@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/Domain/Domain.csproj" />
+  <Project Path="src/Api/Api.csproj" />
+</Solution>

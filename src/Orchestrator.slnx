@@ -3,6 +3,9 @@
   <Project Path="Orchestrator.Application.Tests/Orchestrator.Application.Tests.csproj" />
   <Project Path="Orchestrator.Agents/Orchestrator.Agents.csproj" />
   <Project Path="Orchestrator.Agents.Tests/Orchestrator.Agents.Tests.csproj" />
+  <Project Path="Orchestrator.Cli/Orchestrator.Cli.csproj" />
+  <Project Path="Orchestrator.Cli.Tests/Orchestrator.Cli.Tests.csproj" />
+  <Project Path="Orchestrator.GeneratedAppVerification/Orchestrator.GeneratedAppVerification.csproj" />
   <Project Path="Orchestrator.Domain/Orchestrator.Domain.csproj" />
   <Project Path="Orchestrator.Domain.Tests/Orchestrator.Domain.Tests.csproj" />
   <Project Path="Orchestrator.Lsp/Orchestrator.Lsp.csproj" />

@@ -37,6 +37,18 @@ public sealed record LspServerSettings
     /// would keep the gate from ever giving a verdict about the C# that is ready.
     /// </remarks>
     public bool AnalyzeTypeScript { get; init; } = true;
+
+    /// <summary>
+    /// Where the TypeScript project lives inside the workspace, relative to its root.
+    /// </summary>
+    /// <remarks>
+    /// It is not cosmetic and it is the other half of what makes TypeScript work at all: the
+    /// session prefers the copy of <c>typescript-language-server</c> in the analysed project's own
+    /// <c>node_modules</c>, and falls back to the PATH — where, in a generated workspace, there is
+    /// nothing. Pointing at the folder the scaffold actually installs into (ADR-016) is what turns
+    /// that fallback from the normal case into the failure it is meant to be.
+    /// </remarks>
+    public string TypeScriptProjectPath { get; init; } = string.Empty;
 }
 
 /// <summary>
@@ -170,6 +182,10 @@ public sealed class LspServerHost : IAsyncDisposable
         if (!settings.AnalyzeTypeScript)
         {
             startInfo.ArgumentList.Add("--LspServer:TypeScript:Enabled=false");
+        }
+        else if (settings.TypeScriptProjectPath.Length > 0)
+        {
+            startInfo.ArgumentList.Add($"--LspServer:TypeScript:ProjectPath={settings.TypeScriptProjectPath}");
         }
 
         if (settings.TraceProtocol)

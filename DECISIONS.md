@@ -30,6 +30,7 @@
 
 | ADR | Título corto | Área | Estado |
 |---|---|---|---|
+| ADR-016 | El esqueleto del proyecto generado lo escribe el orquestador, no un agente | Workspace / Gate | Aceptada |
 | ADR-015 | Observabilidad del grafo: eventos tipados con doble lectura, JSONL y consola | Observabilidad / Producto | Aceptada |
 | ADR-014 | Estrategia de testing del orquestador: escenario compartido y una sola frontera de texto libre | Testing / Costo | Aceptada |
 | ADR-013 | El servidor MCP en .NET, como proceso propio dueño de los language servers | LSP / Stack | Aceptada |
@@ -47,6 +48,49 @@
 | ADR-001 | Claude Code CLI headless (`claude -p`), no la API de Anthropic | Agentes / Costo | Aceptada |
 
 ---
+
+## ADR-016 — El esqueleto del proyecto generado lo escribe el orquestador, no un agente
+**Fecha:** 2026-08-11
+**Estado:** Aceptada
+**ADRs relacionados:** ADR-006 y ADR-010 (el gate y su contrato), ADR-008 (`output/` desechable), ADR-011 (el alcance de archivos por agente), ADR-012 (el spec no nombra estructura de proyectos), ADR-004 (el gate verifica compilación, no corrección).
+
+### Contexto
+El Bloque 4 cerró con dos deudas fechadas —D12 y D13— que son la misma pregunta vista de dos lados. **Roslyn abre una solución, no una carpeta de archivos sueltos**: sin `.slnx` y `.csproj` no carga nada, y un servidor que no analiza nada devuelve exactamente lo mismo que un servidor que analizó y encontró todo limpio. Es el falso verde llegando por una tercera puerta, que ni ADR-006 ni el Bloque 2 habían previsto. Del otro lado, `typescript-language-server` tiene que vivir en el `node_modules` del workspace analizado, y una app recién generada no tiene ninguno.
+
+Hasta acá el esqueleto lo escribía el arnés de verificación del Bloque 4 (`CSharpSkeleton`), declarado ahí mismo como andamio del arnés y no del producto. La pregunta que el Bloque 5 tenía que contestar —y que se dejó abierta a propósito, para no decidirla de casualidad mientras se hacía correr otra cosa— es **quién escribe ese esqueleto: el orquestador al preparar el workspace, o un agente como primera tarea del plan.**
+
+La segunda opción es la tentadora. Deja que el pipeline demuestre más: un agente que arma su propio andamiaje es un agente haciendo trabajo de verdad, y el orquestador queda más chico.
+
+### Decisión
+
+**El orquestador escribe el esqueleto, como parte de preparar el workspace, antes de invocar al primer agente.** Vive en `templates/scaffold/` —archivos versionados, no strings en C#— y lo copia `GeneratedWorkspacePreparer` junto con las definiciones de subagente, el hook y el `CLAUDE.md` de la app. Son cinco archivos: `App.slnx`, `src/Domain/Domain.csproj`, `src/Api/Api.csproj`, y `src/Frontend/package.json` + `tsconfig.json`, con su `package-lock.json`.
+
+Tres razones lo obligan, y ninguna es de gusto:
+
+**1. El layout ya era decisión del orquestador, y hace rato.** `LayerMap.Default` lo dice literalmente desde el Bloque 3: *"the generated application does not get to choose its own layout: the layer boundary is only enforceable if the orchestrator fixes the directories up front"*. La atribución de capa —lo que le da destino a la arista condicional del grafo— es un mapa de rutas fijo. Un agente que elige dónde poner los proyectos elige a qué capa pertenece cada error, que es precisamente lo que el grafo no puede delegar.
+
+**2. El hook de alcance de archivos lo impide, y abrirle un hueco sería deshacer D5.** `App.slnx` y `package.json` viven en la raíz y en carpetas que no son de nadie; `templates/hooks/restrict-to-layer.js` rechaza toda escritura fuera de `src/<capa>/`. Para que un agente escribiera el esqueleto habría que darle permiso de escribir en la raíz del workspace — es decir, desactivar la barrera exactamente donde el Bloque 4 acababa de levantarla.
+
+**3. Un andamio no cita ninguna `RN-nn`.** El `CLAUDE.md` que el orquestador inyecta en la app generada le exige a cada agente que todo lo que haga se justifique contra un identificador del spec. Un `.csproj` no verifica ningún criterio de aceptación y no implementa ninguna regla de negocio: una tarea de scaffolding sería la primera excepción a una regla que el proyecto usa para acotar la deriva de alcance.
+
+**Y la razón que decide, por encima de las tres: el esqueleto es aparato del gate, no producto.** Es lo que hace que el gate pueda ver. Si un agente lo escribe mal —un `.slnx` que olvida un proyecto, un `tsconfig.json` que no incluye la carpeta— el gate sigue contestando, con seguridad, sobre un subconjunto del código; y el subconjunto invisible parece limpio. Poner el instrumento de medición del lado no determinista del pipeline es regalar el modo de fallo que el proyecto entero existe para evitar.
+
+**Corolario del mismo argumento: el orquestador también restaura las dependencias** (`GeneratedWorkspaceRestorer`: `dotnet restore` y después `npm ci`). Un proyecto sin restaurar no es un proyecto con menos paquetes — Roslyn reporta como error cada tipo detrás de una referencia que no resuelve. La primera iteración de revisión del agente de dominio llegaría cargada de decenas de diagnostics que no causó nada de lo que escribió: el falso rojo del Bloque 4, a escala, y pagado en turnos.
+
+### Alternativas
+- **El esqueleto como primera tarea del plan, escrita por un agente** → descartado por las tres razones de arriba. Vale registrar que la objeción no es "un agente lo haría mal": es que **no tiene forma de hacerlo bien** sin que se le desactive el hook y se le permita salir del spec, y que aun haciéndolo bien el gate quedaría dependiendo de un artefacto no determinista.
+- **Que el spec de entrada describa la estructura de proyectos** → descartado. ADR-012 fijó que el spec dice *qué* y *por qué*, no *cómo*, y su propio encabezado se compromete a no nombrar clases, endpoints ni estructura de proyectos. Meter el layout ahí dejaría al Spec Analyzer sin la mitad de lo que tiene que analizar.
+- **Generar el esqueleto en código C# en vez de plantillas** → descartado por consistencia: los subagentes, el hook y el `CLAUDE.md` de la app ya son archivos en `templates/`. Lo que una corrida deposita en el workspace tiene que poder leerse sin leer C#.
+- **Un `node_modules` pre-instalado y copiado en cada corrida** → descartado frente a `npm ci`. La copia es más rápida la primera vez y peor en todo lo demás: hay que versionar miles de archivos o mantenerlos fuera del repo, y el resultado deja de ser reproducible desde el `package-lock.json`. Con la caché de npm tibia, `npm ci` tarda unos segundos.
+- **Dejar el servidor de TypeScript apagado también en el Bloque 5** → descartado, aunque era lo barato. El frontend es una de las tres capas y su gate es lo único que verificaría lo que escribe; apagarlo sería declarar que una capa entera se genera sin verificación, que es la definición del problema que este proyecto ataca.
+
+### Consecuencias
+- **`CSharpSkeleton` desaparece del arnés del Bloque 4.** Ese arnés ahora usa la misma preparación que una corrida real, así que dejó de haber un camino de código que solo existe en verificación.
+- **La preparación del workspace pasó a tener costo y a poder fallar.** `dotnet restore` y `npm ci` necesitan red la primera vez, y fallan ruidosamente si no la tienen. Es deliberado: fallar en la preparación cuesta segundos, y fallar en el nodo tres cuesta turnos pagos (AI.md, fallar rápido al arrancar).
+- **Se descubrió una interacción que ninguna de las dos deudas anticipaba, y era capaz de matar la corrida.** Con TypeScript encendido sobre un workspace generado, el gate enumera `.claude/hooks/restrict-to-layer.js` — un `.js` real que el propio orquestador inyecta, que `typescript-language-server` reclama como suyo, y que **no pertenece a ninguna capa**. Un solo diagnostic ahí llega a `LayerMap.Attribute`, no encuentra agente a quien devolvérselo y termina la corrida. `.claude` se agregó a los directorios que el servidor nunca analiza, junto a `.git` y `node_modules`, con test de regresión. La forma del hallazgo se repite: **la plomería del orquestador dentro del workspace es indistinguible del código de la app, salvo que se la excluya a propósito.**
+- **La versión de TypeScript queda fijada en 5.9.3 y no en la última.** TypeScript 7 es el port nativo y `typescript-language-server` 5.3.0 no está verificado contra él; 5.9.3 es la combinación que el Bloque 2 dejó funcionando contra los fixtures. Cambiarla es una línea, con la verificación manual del Bloque 2 como red.
+- **El `Api.csproj` del esqueleto no compila hasta que el agente de API escribe su `Program.cs`** (`CS5001`, sin punto de entrada). No rompe nada y conviene saber por qué: es un error de proyecto y no de documento, así que las pull diagnostics de Roslyn no lo emiten; y aunque lo emitieran, cae en `src/Api/`, que el grafo no consulta como bloqueante mientras la etapa en curso es la de dominio.
+- **La app generada gana un contrato técnico que el spec no le impone**: .NET 10, EF Core InMemory 10.0.10 fijado, React 19 con TypeScript y sin bundler. Es el orquestador imponiendo restricciones a su propio output, igual que ya imponía las tres carpetas y el stack — no es requisito de negocio y no entra en el spec.
 
 ## ADR-015 — Observabilidad del grafo: eventos tipados con doble lectura, JSONL y consola
 **Fecha:** 2026-08-09

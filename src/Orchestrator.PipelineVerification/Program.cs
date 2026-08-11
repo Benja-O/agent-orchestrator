@@ -57,10 +57,13 @@ new GeneratedWorkspacePreparer(new WorkspaceLayout
     McpEndpoint = "http://127.0.0.1:0/mcp",
 }).Prepare(spec);
 
-// Scaffolding the language server needs before any agent has written anything: Roslyn loads a
-// solution, not a folder of loose files. That the orchestrator does not do this yet is a real
-// gap and belongs to block 5, not to this harness — recorded as such in ROADMAP.md.
-CSharpSkeleton.Write(workspaceRoot);
+// The scaffold the language servers need — solution, projects, frontend package files — now
+// comes out of the preparer with everything else (ADR-016). It used to live in this harness as
+// CSharpSkeleton, which is exactly the andamio block 5 was supposed to move into the product.
+var processRunner = new SystemAgentProcessRunner(TimeSpan.FromMinutes(10), TimeProvider.System);
+
+Console.WriteLine("Restoring the scaffold's dependencies…");
+await new GeneratedWorkspaceRestorer(processRunner, workspaceRoot).RestoreAsync(CancellationToken.None);
 
 Console.WriteLine("Starting the MCP server…");
 
@@ -88,7 +91,6 @@ var settings = new ClaudeCodeSettings
     McpEndpoint = $"{lspServer.BaseUrl}/mcp",
 };
 
-var processRunner = new SystemAgentProcessRunner(settings.Timeout, TimeProvider.System);
 var environmentCheck = new AgentEnvironmentCheck(processRunner, workspaceRoot);
 
 Console.WriteLine("Verifying the environment before spending a single turn…");

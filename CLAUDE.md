@@ -119,7 +119,7 @@ aplicalo directo (en código nuevo que estés generando vos).
 | `specs/` | Specs SDD de entrada. Hoy: el gestor de tareas de ADR-009 |
 | `docs/` | Documentos de diseño que no son ADR ni referencia técnica. Hoy: el contrato del servidor MCP |
 | `docs/prompts/` | Un prompt de arranque por bloque del `ROADMAP.md`, escrito al cerrar el bloque anterior |
-| `templates/` | Plantillas que el orquestador inyecta en el workspace generado: el `CLAUDE.md` de la app, las definiciones de subagente de `templates/agents/` y el hook de alcance de archivos de `templates/hooks/` |
+| `templates/` | Plantillas que el orquestador inyecta en el workspace generado: el `CLAUDE.md` de la app, las definiciones de subagente de `templates/agents/`, el hook de alcance de archivos de `templates/hooks/` y el esqueleto de la solución generada de `templates/scaffold/` (ADR-016) |
 | `output/` | **Gitignoreado y desechable.** Ahí escribe el orquestador. Se borra y regenera de cero en cada corrida (ADR-008) |
 | `logs/` | Gitignoreado. Log estructurado JSONL de las corridas |
 | `orquestador-agentes-briefing.md` | El briefing original del desafío. Registro de origen, no se edita |
@@ -129,9 +129,19 @@ el orquestador no está haciendo su trabajo y eso es el bug a arreglar.
 
 ## 🧰 Comandos
 
+**La corrida completa** — spec de entrada, app generada de cero:
+
+```
+dotnet run --project src/Orchestrator.Cli -- --spec specs/gestor-tareas.md --output output/
+```
+
+**Invoca `claude -p` y gasta cuota.** `--max-attempts 2` mientras se depura; `--no-typescript`
+saca esa capa del gate; `--trace-protocol` vuelca el tráfico LSP. `--help` lista todo. Códigos de
+salida: `0` completó, `1` frenó contra un techo de ADR-003, `2` no arrancó.
+
 ```
 dotnet build src/Orchestrator.slnx
-dotnet test  src/Orchestrator.slnx     # 218 tests, sin red, sin `claude`, sin language servers
+dotnet test  src/Orchestrator.slnx     # 252 tests, sin red, sin `claude`, sin language servers
 ```
 
 La suite completa es la verificación de la regla de oro 3, así que correrla entera es lo
@@ -174,16 +184,23 @@ dotnet run --project src/Orchestrator.PipelineVerification
 Es la evidencia del criterio de salida del Bloque 4. **Invoca `claude -p` y gasta cuota**, así que
 tampoco es un test. Una corrida son ~7 turnos de agente y varios minutos.
 
+**La verificación de la app generada** — la tercera parte del criterio de salida del Bloque 5, que
+es la única que el gate no puede contestar (R4: el gate verifica compilación, no corrección).
+Levanta la app de `output/` y comprueba por HTTP que RN-01 se sostiene:
+
+```
+dotnet run --project src/Orchestrator.GeneratedAppVerification
+dotnet run --project src/Orchestrator.GeneratedAppVerification -- --complete /api/tareas/{id}/cerrar
+```
+
+**No gasta cuota.** Las rutas van por argumento porque el spec no nombra endpoints a propósito, así
+que las elige el agente de API; el arnés imprime todos los intercambios HTTP para que una ruta
+equivocada se distinga de una invariante rota.
+
 **Si algo quedó vivo** (un language server huérfano bloquea el `bin/` en el próximo build y
 mantiene handles sobre `output/`): `tools/kill-language-servers.ps1`. **Ojo: `pwsh` no está
 instalado en esta máquina** —lo descubrió el Bloque 4, porque un hook que lo invocaba falló en
 silencio—, así que el script se corre con `powershell.exe -File`.
-
-Pendiente hasta el Bloque 5:
-
-```
-dotnet run --project src/Orchestrator.Cli -- --spec specs/gestor-tareas.md --output output/
-```
 
 Dependencias de entorno:
 

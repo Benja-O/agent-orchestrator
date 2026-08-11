@@ -2,22 +2,6 @@ using Orchestrator.Domain;
 
 namespace Orchestrator.PipelineVerification;
 
-/// <summary>Sends the same event stream to several observers.</summary>
-internal sealed class FanOutRunObserver : IRunObserver
-{
-    private readonly IReadOnlyList<IRunObserver> _observers;
-
-    public FanOutRunObserver(IReadOnlyList<IRunObserver> observers) => _observers = observers;
-
-    public void Observe(RunEvent runEvent)
-    {
-        foreach (var observer in _observers)
-        {
-            observer.Observe(runEvent);
-        }
-    }
-}
-
 internal sealed record VerificationVerdict(bool Passed, IReadOnlyList<string> Lines);
 
 /// <summary>

@@ -30,6 +30,9 @@ public sealed record WorkspaceLayout
 /// </remarks>
 public sealed class GeneratedWorkspacePreparer
 {
+    /// <summary>Directories the scaffold copy never carries over, however they got there.</summary>
+    private static readonly string[] NeverCopied = ["node_modules", "bin", "obj"];
+
     private readonly WorkspaceLayout _layout;
     private readonly LayerMap _layerMap;
 
@@ -57,12 +60,62 @@ public sealed class GeneratedWorkspacePreparer
             Directory.CreateDirectory(Path.Combine(root, _layerMap.ScopeOf(layer).Replace('/', Path.DirectorySeparatorChar)));
         }
 
+        CopyScaffold(root);
         CopyAgentDefinitions(root);
         CopyHookScript(root);
         CopyGeneratedApplicationInstructions(root);
         WriteSpec(root, spec);
         WriteMcpConfiguration(root);
         WriteSettings(root);
+    }
+
+    /// <summary>
+    /// The build files of the generated application: the solution, the two project files and the
+    /// frontend's <c>package.json</c> and <c>tsconfig.json</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>The orchestrator writes these, never an agent (ADR-016).</strong> Roslyn opens a
+    /// solution, not a folder of loose files, so without them the C# language server loads
+    /// nothing and reports nothing — and a gate that is analysing nothing looks exactly like a
+    /// gate that found clean code. That is the false green arriving through the one door neither
+    /// ADR-006 nor block 2 had covered, and it is the reason this cannot sit on the
+    /// non-deterministic side of the pipeline.
+    /// </para>
+    /// <para>
+    /// They are files under <c>templates/scaffold/</c> rather than strings in this class, for the
+    /// same reason the agent definitions and the hook are: what a run puts in the workspace
+    /// should be readable without reading C#.
+    /// </para>
+    /// </remarks>
+    private void CopyScaffold(string root)
+    {
+        var source = Path.Combine(_layout.TemplatesDirectory, "scaffold");
+        RequireDirectory(source, "the generated application's scaffold");
+
+        CopyDirectory(source, root);
+    }
+
+    private static void CopyDirectory(string source, string destination)
+    {
+        Directory.CreateDirectory(destination);
+
+        foreach (var file in Directory.EnumerateFiles(source))
+        {
+            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), overwrite: true);
+        }
+
+        foreach (var directory in Directory.EnumerateDirectories(source))
+        {
+            var name = Path.GetFileName(directory);
+
+            if (NeverCopied.Contains(name, StringComparer.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            CopyDirectory(directory, Path.Combine(destination, name));
+        }
     }
 
     /// <summary>

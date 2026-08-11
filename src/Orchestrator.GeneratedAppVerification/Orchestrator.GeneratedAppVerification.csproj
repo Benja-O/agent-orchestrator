@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Orchestrator.GeneratedAppVerification</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    No project reference to anything. This harness talks to the generated application over HTTP
+    and knows nothing about the orchestrator that produced it — which is the point: it is the
+    outside view, the one the acceptance criteria are written from.
+  -->
+
+</Project>
