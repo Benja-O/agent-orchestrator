@@ -15,36 +15,31 @@
 
 ---
 
-## Estado (2026-08-10) — Bloques 0 a 4 cerrados; próximo: Bloque 5
+## Estado (2026-08-11) — Bloques 0 a 5 cerrados; próximo: Bloque 6
 
-**El pipeline corre con agentes reales.** Los dos adaptadores que faltaban existen:
-`Orchestrator.Agents` invoca `claude -p` y prepara el workspace, `Orchestrator.Lsp` es dueño del
-proceso del servidor MCP y traduce sus diagnostics al tipo de dominio. El grafo no cambió una
-línea — la frontera ya estaba probada del lado de adentro, que era la apuesta del Bloque 3 y
-salió bien.
+**El pipeline produce la aplicación pedida, de punta a punta y sin intervención.** Un spec SDD
+entra por `Orchestrator.Cli`, y salen tres capas que compilan, una app que arranca y una regla de
+negocio que se sostiene desde afuera. Las tres partes del criterio de salida están verificadas con
+comandos, no con afirmaciones.
 
-**218 tests**, sin red y sin `claude` en el `PATH`. Y una corrida real, reproducible con
-`dotnet run --project src/Orchestrator.PipelineVerification`, en la que un error inyectado a
-propósito vuelve al agente de su capa y la iteración siguiente lo corrige.
+**277 tests**, sin red, sin `claude` y sin language servers.
 
-**R5 está cerrado, y resultó ser tres riesgos, no uno.** Los tres producen el mismo síntoma —un
-agente que corre, contesta con seguridad y no tiene servidor de lenguaje— y ninguno levanta un
-error. El detalle está abajo, en el riesgo y en la entrada del historial. **ADR-011 pasó a
-Aceptada con cuatro correcciones**; era el único que quedaba en `Propuesta`, así que ya no hay
-ninguno.
+**El Bloque 5 encontró el escalón que faltaba entre "compila" y "hace lo que se pidió": "arranca".**
+Su primera corrida completa pasó los tres gates de compilación —`dotnet build` en cero, `tsc` en
+cero— y devolvió **500 en la primera request**, porque el agente de API había escrito C# válido
+alrededor de una creencia falsa sobre EF Core. No hay diagnostic para una creencia. De ahí salió
+**ADR-017**, el gate de runtime: un nodo que levanta la app y la ejercita, cuyo hallazgo entra al
+grafo como un `Diagnostic` más y por eso no necesitó ni una arista nueva.
 
-**Deuda D5 cobrada.** El hook `PreToolUse` de alcance de archivos existe, está versionado y tiene
-tests que lo corren de verdad.
+**ADR-016** cerró D12 y D13: el esqueleto del proyecto generado lo escribe el orquestador, porque
+**es aparato del gate y no producto** — si sale mal, el gate contesta con seguridad sobre un
+subconjunto del código y el resto parece limpio.
 
-**Plazo: vie 2026-08-07 → lun 2026-08-24 (17 días).** Es el condicionante que ordena todas
-las prioridades de abajo: hay tiempo para un pipeline que funcione de punta a punta sobre un
-artefacto chico, y no lo hay para nada más.
+**Plazo: vie 2026-08-07 → lun 2026-08-24 (17 días).** El proyecto va **13 días adelantado**: el
+Bloque 5 estaba planificado para el 21-22/08 y cerró el 11/08.
 
-**Lo próximo — Bloque 5.** La corrida completa sobre `specs/gestor-tareas.md`, con
-`Orchestrator.Cli` como host. Lo que el Bloque 4 dejó explícitamente pendiente y ahora bloquea:
-**el orquestador no arma el esqueleto de la solución generada** (`.slnx` y `.csproj`), y Roslyn
-carga una solución, no una carpeta de archivos sueltos. Hoy ese esqueleto lo escribe el arnés de
-verificación; decidir el layout del proyecto generado es trabajo del Bloque 5. Ver deuda D12.
+**Lo próximo — Bloque 6.** Pulido, README real y demo ensayada. Es el único bloque que queda y no
+tiene deuda que lo bloquee.
 
 ---
 
@@ -57,7 +52,7 @@ verificación; decidir el layout del proyecto generado es trabajo del Bloque 5. 
 | **2** | sáb 09/08 | Servidor MCP de LSP sobre Roslyn LSP + `typescript-language-server` | Una consulta manual al servidor devuelve diagnostics reales de un `.cs` roto a propósito, **y** una consulta de `definition` devuelve la ubicación correcta. ADR-006 pasa a `Aceptada` o se revierte a OmniSharp | ✅ 09/08 |
 | **3** | mié 12 – dom 16/08 | Esqueleto del grafo (estado, nodos, transiciones) + Spec Analyzer | El grafo corre end-to-end contra `FakeAgentRunner` y `FakeLanguageServer`, incluido el ciclo de revisión y las tres vías de terminación. La suite corre sin `claude` en el `PATH` | ✅ 09/08 |
 | **4** | lun 17 – vie 21/08 | Agentes de capa (dominio, API .NET, React) + loop de revisión contra diagnostics reales | Un error inyectado a propósito hace volver el grafo al agente de esa capa, y la siguiente iteración lo corrige. Visible en el log | ✅ 10/08 |
-| **5** | vie 21 – sáb 22/08 | Primera corrida completa: spec → app compilable | `output/` se genera de cero, la app compila, y el endpoint que intenta violar la invariante de ADR-009 la rechaza | ⬜ |
+| **5** | vie 21 – sáb 22/08 | Primera corrida completa: spec → app compilable | `output/` se genera de cero, la app compila, y el endpoint que intenta violar la invariante de ADR-009 la rechaza | ✅ 11/08 |
 | **6** | dom 23 – lun 24/08 | Pulido, README real, `DECISIONS.md` al día, demo ensayada | El README explica la arquitectura del grafo, la integración LSP y la integración con Claude Code. La demo corre de principio a fin sin intervención | ⬜ |
 
 **Los bloques 2 y 3 se solapan a propósito.** El grafo se construye contra
@@ -87,6 +82,11 @@ cuota real del plan Pro. Es el bloque donde el riesgo de límite de uso se mater
 compila **y** sostiene la invariante". Compilar es lo que verifica el gate de LSP; la
 invariante es lo que verifica que el pipeline transmitió una regla de negocio a través de tres
 capas (ADR-004, consecuencia final).
+
+*Y la distinción resultó tener un escalón intermedio que nadie había previsto: entre "compila" y
+"sostiene la invariante" está "arranca". La primera corrida completa pasó los tres gates de
+compilación y devolvió 500 en la primera request, así que el bloque tuvo que construir el gate de
+runtime de ADR-017 antes de poder siquiera intentar el tercio que le importaba.*
 
 **Bloque 6 — la entrega.** Dos repos (ADR-008). El README del orquestador explica la
 arquitectura; el de la app generada aclara que es output, no trabajo manual.
@@ -179,7 +179,7 @@ retomar si el proyecto continuara.
 | D1 | Sin persistencia de corridas: una corrida interrumpida se reinicia desde cero | ADR-007 | Si el tiempo de una corrida completa crece a punto de volver caro reiniciar |
 | D2 | Sin paralelismo entre agentes de capa: el grafo es estrictamente secuencial | ADR-003 | Si el tiempo de corrida se vuelve el cuello de botella de la iteración |
 | D3 | El grafo es código, no configuración: cambiar el pipeline requiere recompilar | ADR-003 (alternativa descartada) | Cuando exista un segundo pipeline real que justifique la generalización |
-| D4 | Sin gate de tests sobre la app generada, solo gate de compilación | ADR-004 (alternativa descartada) | Fuera del alcance de 2.5 semanas; es la extensión natural del gate |
+| D4 | Sin gate de tests sobre la app generada | ADR-004 (alternativa descartada) | **Cobrada a medias el 2026-08-11 (ADR-017).** Ya no es "solo gate de compilación": hay un nodo `api-runtime` que levanta la app y la ejercita, porque el Bloque 5 produjo tres gates limpios y un 500 en la primera request. Lo que sigue faltando es gate de *comportamiento* — ver D16 |
 | ~~D5~~ | ~~El alcance de archivos por agente es una convención del prompt, no una barrera~~ | ADR-011 | ✅ **Cobrada el 2026-08-10.** El hook vive en `templates/hooks/restrict-to-layer.js`, se pasa por invocación con la carpeta de esa capa, y tiene tests que lo ejecutan de verdad. El orquestador comprueba al arrancar que bloquea |
 | D6 | Reabrir una tarea completada abriría un hueco en RN-01 y queda fuera del spec | `specs/gestor-tareas.md`, fuera de alcance | Solo si se amplía el artefacto de juguete, cosa que ADR-009 desaconseja |
 | D7 | `workspaceSymbol` puede volver vacío mientras el índice de símbolos se calienta, y el contrato no distingue eso de "no existe" | Bloque 2, ADR-010 | Si un agente de capa concluye que una entidad no existe cuando sí existe. El gate no usa esta tool, así que no bloquea el pipeline |
@@ -190,11 +190,101 @@ retomar si el proyecto continuara.
 | ~~D12~~ | ~~El orquestador no arma el esqueleto de la solución generada~~ | Bloque 4 | ✅ **Cobrada el 2026-08-11 (ADR-016).** El esqueleto vive en `templates/scaffold/` y lo copia `GeneratedWorkspacePreparer` con todo lo demás. Lo escribe el orquestador y no un agente por tres razones que el repo ya tenía escritas sin darse cuenta —el layout es de `LayerMap`, el hook prohíbe escribir en la raíz, un `.csproj` no cita ninguna `RN-nn`— y por una cuarta que decide: **es el aparato del gate, no producto** |
 | ~~D13~~ | ~~El servidor de TypeScript necesita un `node_modules` que en una app recién generada no existe~~ | Bloque 4 | ✅ **Cobrada el 2026-08-11 (ADR-016).** `GeneratedWorkspaceRestorer` corre `npm ci` en `src/Frontend`, y `LspServerSettings.TypeScriptProjectPath` apunta el servidor ahí. Verificado con `typescript-language-server` **no instalado globalmente**: el log muestra que se lanzó desde el `node_modules` del workspace, así que la deuda está cerrada y no pasando por casualidad. La interacción temida no llegó a pasar —`LspQueryService` ya excluía las sesiones sin documentos en scope— pero **apareció otra que ninguna de las dos deudas anticipaba**: ver D15 |
 | D14 | El CLI corre desde el repositorio, no desde una instalación: busca `templates/` y el assembly del servidor MCP caminando hacia arriba desde su propio ejecutable | Bloque 5, `RepositoryLayout` | Si el orquestador tuviera que distribuirse. Fuera del alcance de un desafío que se evalúa corriendo el repo |
+| D16 | El gate de runtime comprueba que la app arranca y contesta, no que se comporte: llama a los `GET` sin parámetros y no ejercita ninguna regla de negocio | Bloque 5, ADR-017 | Es la mitad que le falta a D4. Hoy la cubre `Orchestrator.GeneratedAppVerification` desde afuera, a mano; el paso natural es que el arnés de CA-06 se vuelva un nodo más del grafo |
 | D15 | La plomería que el orquestador inyecta en el workspace es indistinguible del código de la app para un language server | Bloque 5, ADR-016 | ✅ **Cerrada en el mismo bloque, y vale registrarla porque casi mata la primera corrida.** `.claude/hooks/restrict-to-layer.js` es un `.js` real que `typescript-language-server` reclama como suyo y que **no pertenece a ninguna capa** — un solo diagnostic ahí llega a `LayerMap.Attribute`, no encuentra agente a quien devolvérselo y termina la corrida. `.claude` se sumó a los directorios que el servidor nunca enumera, con test de regresión. Lo general: cualquier archivo que el orquestador deposite en el workspace y que un servidor de lenguaje reclame es una corrida muerta esperando |
 
 ---
 
 ## Historial completado
+
+### ✅ Bloque 5 — La corrida completa, y el escalón que faltaba entre compilar y funcionar (2026-08-11)
+
+El bloque donde el pipeline deja de ser un mecanismo y pasa a ser un productor. Tres proyectos
+nuevos, dos ADRs, 59 tests nuevos — y un hallazgo que obligó a construir algo que no estaba en el
+plan.
+
+**Criterio de salida, cumplido en sus tres partes**, cada una con su comando:
+
+| Parte | Evidencia |
+|---|---|
+| `output/` se genera de cero | `dotnet run --project src/Orchestrator.Cli -- --spec specs/gestor-tareas.md --output output/` — 14 tareas planificadas, tres capas, ninguna intervención manual |
+| La app compila | Gate limpio en las tres capas · `dotnet build output/App.slnx` → 0 errores · `tsc --noEmit` → 0 errores |
+| **El endpoint rechaza la violación de RN-01** | `dotnet run --project src/Orchestrator.GeneratedAppVerification` → CA-01, CA-04, CA-05, CA-06, CA-07 y CA-08 en verde |
+
+**El hallazgo del bloque lo produjo la corrida que "salió bien".** La primera corrida completa
+terminó `Completed`, con las tres capas pasando su gate en la primera pasada. Y la aplicación no
+funcionaba:
+
+```
+The 'HashSet<TareaId>' property 'Tarea._dependencias' could not be mapped
+because the database provider does not support this type.
+```
+
+Cuatro verificaciones independientes decían que estaba bien —el gate de LSP, `dotnet build`, `tsc`,
+y el propio agente— y **la primera request devolvía 500**. En el `DbContext`, con su comentario al
+lado: *"Para InMemory, EF Core puede manejar colecciones de tipos value directamente."* No las
+maneja. El código es C# válido; lo que está mal es **una afirmación del agente sobre el
+comportamiento en runtime de una librería**, y no existe ningún diagnostic para una creencia falsa.
+
+Es R4 materializándose, y R4 lo subestimaba: decía que una regla de negocio podía faltar con el
+código compilando, y lo que pasó fue que **la app no llegaba a ejercitar ninguna regla**. Es también
+la versión más pura del anti-patrón que el proyecto tiene escrito desde el Bloque 0 —*confiar en que
+el agente dice que compiló*— un nivel más abajo, donde el agente tiene razón en que compila.
+
+**ADR-017 es la respuesta, y su decisión de diseño vale más que el nodo.** Un fallo de runtime **es
+un `Diagnostic`**. Expresado así, `LayerMap` lo atribuye, `ReviewPolicy` le aplica el techo de
+intentos y la huella de no-progreso, y `AgentPrompts` lo transporta al prompt — sin arista nueva, sin
+vía de terminación nueva, sin nada en la máquina de estados que exista solo para esto. El mismo fallo
+de arranque dos veces detiene la corrida por exactamente la misma razón por la que lo hace el mismo
+error de compilación dos veces. La segunda corrida lo mostró andando: `runtime: the application
+starts and answers on 2 endpoint(s)`.
+
+**La puerta que este gate podía abrir y no abrió:** no encontrar nada que probar es **fallo**, nunca
+aprobación. Un verificador que reportara éxito porque no descubrió endpoints sería un falso verde
+producido por el mecanismo instalado para evitarlos, e idéntico al éxito real. Por eso
+`ApplicationVerification` lleva `RoutesExercised` junto a los diagnostics y no al lado.
+
+**ADR-016 cerró D12 y D13, y las tres razones ya estaban escritas en el repo sin que nadie las
+hubiera juntado.** El esqueleto lo escribe el orquestador porque el layout ya es decisión de
+`LayerMap`, porque el hook de alcance **prohíbe** que un agente escriba en la raíz del workspace, y
+porque un `.csproj` no cita ninguna `RN-nn` —que es lo que el `CLAUDE.md` de la app generada le
+exige a todo lo que un agente hace—. Y por una cuarta que decide: **el esqueleto es aparato del gate,
+no producto.**
+
+**Cinco defectos que solo aparecen corriendo el sistema entero, y los cinco de la misma familia:**
+
+1. **`.claude/hooks/restrict-to-layer.js` es un `.js` que `typescript-language-server` reclama como
+   suyo.** No pertenece a ninguna capa —por construcción, porque los agentes no pueden escribir
+   fuera de la suya—, así que un solo diagnostic ahí llega a `LayerMap.Attribute`, no encuentra a
+   quién devolvérselo y **mata la corrida**. La plomería del orquestador dentro del workspace es
+   indistinguible del código de la app salvo que se la excluya a propósito.
+2. **`npm.cmd` lanzado por nombre resuelve `%~dp0` al directorio de trabajo del que lo llama**, así
+   que npm buscó su propio `npm-cli.js` dentro de `output/src/Frontend/node_modules` y reportó
+   módulo faltante — un mensaje que se lee como instalación corrupta y no lo es. Rompió la primera
+   corrida real **en la preparación, sin gastar un turno**, que es para lo que existe el fail-fast.
+3. **`workspaceSymbol` preguntaba a todas las sesiones**, a diferencia de `diagnostics` que ya
+   filtraba. Un `typescript-language-server` sin proyecto contesta con error, y ese error se llevó
+   puesta una consulta sobre el C# que Roslyn tenía cargado perfecto — justo al agente de API, cuya
+   plantilla le dice que busque el símbolo de dominio antes de escribir contra él.
+4. **`tools/kill-language-servers.ps1` no corre como estaba documentado:** la política de ejecución
+   lo rechaza sin `-ExecutionPolicy Bypass`. Segunda vez que esta red de seguridad resulta no
+   ejecutable —la primera fue `pwsh`, en el Bloque 4— y las dos veces se notó recién el día que hizo
+   falta.
+5. **Y uno en el arnés de verificación, otra vez.** Su heurística decía *"un 404 es la ruta
+   equivocada, no el campo"*, y una corrida real la desmintió en una línea: el handler contesta 404
+   cuando el prerrequisito del cuerpo no se encuentra, que es exactamente lo que pasa cuando el
+   nombre del campo está mal. El atajo convirtió "adiviné mal" en "la ruta es otra" y apuntó el
+   reporte al lugar equivocado. **Es la segunda vez que una verificación de este proyecto está
+   rota**; conviene tenerlo presente como categoría.
+
+**Lo que confirmó dos apuestas anteriores.** El grafo volvió a no cambiar para que un adaptador
+nuevo encajara: `Orchestrator.Runtime` entró por la misma frontera que `Orchestrator.Agents` y
+`Orchestrator.Lsp`. Y el formato del plan del spec analyzer parseó al primer intento por segunda
+corrida consecutiva, sobre un plan distinto (14 tareas contra 17 de la corrida anterior).
+
+**Lo que quedó abierto, dicho:** D14 (el CLI corre desde el repo, no desde una instalación) y D16
+(el gate de runtime comprueba que la app arranca y contesta, no que se comporte — la mitad que le
+falta a D4).
 
 ### ✅ Bloque 4 — Los adaptadores y la primera corrida con agentes reales (2026-08-10)
 

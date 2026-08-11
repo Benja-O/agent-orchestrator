@@ -103,12 +103,12 @@ public sealed class TaskManagerClient : IDisposable
                 return true;
             }
 
-            // A 404 is the route being wrong, not the field: trying the other seven names would
-            // fill the report with noise that all says the same thing.
-            if (exchange.Status == HttpStatusCode.NotFound)
-            {
-                return false;
-            }
+            // Every candidate gets tried, including after a 404. An earlier version stopped there,
+            // reasoning that a 404 meant the route was wrong rather than the field — and a real
+            // run disproved it in one line: the handler answers 404 when the prerequisite in the
+            // body cannot be found, which is exactly what happens when the field name is wrong and
+            // the id deserialises to its default. The shortcut turned "wrong guess" into "wrong
+            // route" and pointed the report at the wrong thing.
         }
 
         // Some designs take the bare identifier as the whole body.

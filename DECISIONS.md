@@ -30,6 +30,7 @@
 
 | ADR | Título corto | Área | Estado |
 |---|---|---|---|
+| ADR-017 | Gate de runtime: un nodo que pregunta si la app funciona, no si compila | Grafo / Gate | Aceptada |
 | ADR-016 | El esqueleto del proyecto generado lo escribe el orquestador, no un agente | Workspace / Gate | Aceptada |
 | ADR-015 | Observabilidad del grafo: eventos tipados con doble lectura, JSONL y consola | Observabilidad / Producto | Aceptada |
 | ADR-014 | Estrategia de testing del orquestador: escenario compartido y una sola frontera de texto libre | Testing / Costo | Aceptada |
@@ -48,6 +49,67 @@
 | ADR-001 | Claude Code CLI headless (`claude -p`), no la API de Anthropic | Agentes / Costo | Aceptada |
 
 ---
+
+## ADR-017 — Gate de runtime: un nodo que pregunta si la app funciona, no si compila
+**Fecha:** 2026-08-11
+**Estado:** Aceptada
+**ADRs relacionados:** ADR-004 (el gate de LSP y su límite declarado), ADR-003 (las vías de terminación que este nodo reutiliza enteras), ADR-016 (el andamiaje que lo hace posible), ADR-011 (la plantilla del agente de API), ADR-001 (el turno pago que esto evita gastar).
+
+### Contexto
+El Bloque 5 corrió el pipeline completo sobre `specs/gestor-tareas.md` y produjo, en la primera pasada de cada capa, una aplicación que **compila y no funciona**.
+
+La evidencia, entera, porque el valor del hallazgo está en lo unánime que fue el veredicto equivocado:
+
+| Verificación | Resultado |
+|---|---|
+| Gate de LSP, tres capas | limpio |
+| `dotnet build output/App.slnx` | 0 errores, 0 advertencias |
+| `tsc --noEmit` sobre el frontend | 0 errores |
+| **Primer `POST /api/tareas`** | **500** |
+
+La causa, en el `DbContext` que escribió el agente de API, con su propio comentario al lado:
+
+```csharp
+// Las dependencias se almacenan como una colección en el backing field _dependencias.
+// Para InMemory, EF Core puede manejar colecciones de tipos value directamente.
+tareaBuilder.Property("_dependencias");
+```
+
+**No las maneja.** El código es C# válido —`Property(string)` acepta cualquier nombre— y explota al construir el modelo, en la primera request. Lo que está mal no es el código: es una **afirmación del agente sobre el comportamiento en runtime de una librería**, y no existe ningún diagnostic para una creencia falsa.
+
+Esto es R4 del ROADMAP materializándose, y conviene decir que R4 lo subestimaba. Decía que *"una regla de negocio puede estar ausente y el código compilar perfecto"*; lo que pasó es peor y más barato de atrapar: la aplicación **no llega a ejercitar ninguna regla**. Y es la versión más pura del anti-patrón que el proyecto tiene escrito desde el Bloque 0 —*confiar en que el agente dice que compiló*— un nivel más abajo, donde el agente tiene razón en que compila.
+
+### Decisión
+
+**Un nodo `api-runtime`, después de que la capa de API pasa su gate de compilación, que levanta la aplicación generada y le pega.**
+
+**1. Un fallo de runtime es un `Diagnostic`.** Es la decisión que compra la feature casi sin código. `IApplicationVerifier.VerifyAsync` devuelve una `ApplicationVerification` que lleva un `DiagnosticSet`, y ese set se funde con el veredicto de la capa de API. A partir de ahí no hubo que tocar nada: `LayerMap` lo atribuye, `ReviewPolicy` le aplica el techo de intentos y la huella de no-progreso, `AgentPrompts.ForLayer` lo pone en el prompt. **El mismo fallo de arranque dos veces detiene la corrida por exactamente la misma razón por la que lo hace el mismo error de compilación dos veces**, sin arista nueva y sin vía de terminación nueva.
+
+**2. Después de la capa de API, no al final del pipeline.** Las dos posiciones atrapan el fallo; solo esta lo atrapa **antes de pagar el turno del frontend**, que habría que rehacer igual. Es la misma lógica de costo de ADR-001 que ya gobierna el resto del grafo.
+
+**3. Las rutas se descubren, no se configuran.** El verificador lee el documento OpenAPI de la app y llama a los `GET` sin parámetros. ADR-012 fijó que el spec no nombra endpoints —la descomposición es del pipeline— así que las rutas son elección del agente de API, corrida a corrida. Leerlas de la descripción que la propia app publica es cómo el orquestador las ejercita sin haber nombrado ninguna.
+
+Solo `GET`, y solo sin parámetros: una verificación que cambia el estado de lo que mide está midiendo otra cosa, y una que inventa datos para llenar un `{id}` falla por razones que no son del pipeline.
+
+**4. No encontrar nada que probar es un fallo, nunca una aprobación.** Es la única puerta por la que este gate podía inventar un falso verde, y sería el peor de todos: un veredicto limpio producido por el mecanismo instalado para evitarlos, idéntico al de una app que anda. Una app sin endpoints descubribles vuelve al agente con un diagnostic que le dice que agregue `AddOpenApi()`/`MapOpenApi()`. Por eso `ApplicationVerification` lleva `RoutesExercised` **junto** a los diagnostics y no al lado: "sin fallos" significa una cosa con once endpoints contestando y otra con cero.
+
+**5. Un 4xx pasa; un 5xx falla.** La app está viva y un error de cliente es una respuesta legítima a una request que el verificador se inventó. Tratarlo como fallo mandaría al agente a perseguir un rechazo correcto.
+
+**6. `ASPNETCORE_ENVIRONMENT=Development`.** Es lo que hace que la excepción vuelva en el cuerpo de la respuesta en vez de un 500 pelado. Todo el valor de este nodo es poder entregarle al agente **el motivo real**, y *"Internal Server Error"* no lo es. En la corrida que lo motivó, el mensaje que llega trae hasta la sugerencia de arreglo de EF Core.
+
+### Alternativas
+- **Un gate de tests sobre la app generada (D4 entera)** → descartado por alcance, y la distinción importa: eso exige que el pipeline genere además una suite, y entonces el gate depende de tests escritos por el mismo agente cuyo trabajo verifican. Este nodo no le pide nada nuevo al agente salvo que su app arranque.
+- **Reforzar la plantilla del agente de API y confiar** → descartado como *única* medida, aunque la plantilla se reforzó igual con el caso concreto de EF Core. Arregla la instancia, no la clase: nada impide que la próxima corrida invente otra creencia falsa sobre otra librería. Y "hacer al agente más listo" es exactamente el tipo de mitigación de la que la tabla de anti-patrones desconfía.
+- **Conformarse con que el proceso levante** → descartado, y es la alternativa que había que descartar con cuidado porque es la más barata. **No habría atrapado este bug:** la app levanta perfecto y falla recién al tocar el `DbContext`. Un gate que no atrapa el caso que lo motivó es peor que no tenerlo, porque a partir de ahí se le cree.
+- **Que el orquestador imponga una ruta de verificación conocida** → descartado. Es determinista y no depende de OpenAPI, pero pone al orquestador a nombrar un endpoint de la app generada, que es justo la línea que ADR-012 trazó.
+
+### Consecuencias
+- **`Orchestrator.Runtime` es el cuarto proyecto autorizado a hacer `Process.Start`.** La regla de oro 2 de `AI.md` y su tabla de anti-patrones se actualizaron; el apagado mata el árbol de procesos, porque `dotnet run` lanza la app como hijo y un huérfano que se queda con el puerto haría que **la verificación siguiente le hable a la aplicación de la corrida anterior** — un falso verde de mecha muy larga.
+- **El grafo recibe el verificador como parámetro opcional.** Ausente, el pipeline queda gateado solo en compilación: es lo que quiere la suite, que ejercita la máquina de estados sin levantar nada, y lo que ninguna corrida real debe hacer. `Orchestrator.Cli` siempre lo pasa.
+- **La suite lo ejercita entero sin arrancar un proceso.** `FakeApplicationVerifier` lee el `FakeWorkspace` que el agente falso muta, igual que `FakeLanguageServer`: una corrida donde el agente arregla el arranque es una corrida donde algo que el verificador lee efectivamente cambió (ADR-014). Nueve tests, milisegundos.
+- **El andamiaje de ADR-016 gana `Microsoft.AspNetCore.OpenApi`**, y la plantilla del agente de API gana la exigencia de exponer el documento. Es el orquestador imponiéndole **verificabilidad** a su propio output, que es una categoría distinta de imponerle diseño.
+- **Una corrida ahora puede morir porque el agente olvidó una línea de `Program.cs`**, gastando un turno. Es el costo aceptado de no tener falsos verdes, y es el mismo trato que el proyecto hace en todos los otros lados.
+- **D4 queda cobrada a medias y dicha:** hay gate de arranque y de respuesta, no hay gate de comportamiento. Que la app *sostenga RN-01* sigue verificándose desde afuera, con `Orchestrator.GeneratedAppVerification`.
 
 ## ADR-016 — El esqueleto del proyecto generado lo escribe el orquestador, no un agente
 **Fecha:** 2026-08-11

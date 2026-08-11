@@ -96,7 +96,8 @@ la práctica de quien la escribió.
 
 Si detectás cualquiera de los anti-patrones de la tabla final de `AI.md` — en particular:
 
-- `Process.Start` fuera de `Orchestrator.Agents` / `Orchestrator.Lsp` / `Orchestrator.LspServer`
+- `Process.Start` fuera de `Orchestrator.Agents` / `Orchestrator.Lsp` / `Orchestrator.LspServer` /
+  `Orchestrator.Runtime`
 - Un test que invoca `claude -p` o un language server real
 - `ANTHROPIC_API_KEY` en cualquier forma
 - Un ciclo del grafo sin límite de iteraciones — incluido el de reconsultar el gate mientras
@@ -141,7 +142,7 @@ salida: `0` completó, `1` frenó contra un techo de ADR-003, `2` no arrancó.
 
 ```
 dotnet build src/Orchestrator.slnx
-dotnet test  src/Orchestrator.slnx     # 252 tests, sin red, sin `claude`, sin language servers
+dotnet test  src/Orchestrator.slnx     # 277 tests, sin red, sin `claude`, sin language servers
 ```
 
 La suite completa es la verificación de la regla de oro 3, así que correrla entera es lo

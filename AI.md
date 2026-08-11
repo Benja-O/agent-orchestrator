@@ -30,9 +30,10 @@ la máquina de estados sin gastar cuota del plan Pro (ADR-001).
    *Verificable con:* `grep -rn "System.Diagnostics.Process\|LanguageServer" Orchestrator.Domain Orchestrator.Application` → debe dar cero.
 
 2. **Todo I/O de subproceso vive en los adaptadores, y en ningún otro lado.** `Process.Start`
-   aparece en exactamente dos proyectos, cada uno dueño de los procesos que lanza:
+   aparece en exactamente cuatro proyectos, cada uno dueño de los procesos que lanza:
    `Orchestrator.Agents` lanza la CLI de Claude Code; `Orchestrator.LspServer` lanza los dos
-   language servers. `Orchestrator.Lsp` lanza el servidor MCP y lo consulta como cliente.
+   language servers; `Orchestrator.Runtime` lanza la app generada para el gate de runtime
+   (ADR-017). `Orchestrator.Lsp` lanza el servidor MCP y lo consulta como cliente.
    La jerarquía es orquestador → servidor MCP → language servers, y la razón de que no sea
    plana está en ADR-013: el que sostiene las conexiones LSP tiene que ser el que contesta las
    tool calls.
@@ -40,13 +41,13 @@ la máquina de estados sin gastar cuota del plan Pro (ADR-001).
    corrida fallida es un bug, no un detalle: mantiene handles sobre `output/`, que ADR-008
    exige poder borrar y regenerar de cero.
    *Verificable con:* `grep -rn "Process.Start" --include=*.cs src/` → en proyectos de
-   producción, solo `Orchestrator.Agents`, `Orchestrator.Lsp` y `Orchestrator.LspServer`. Otros
-   tres aparecen en el grep y ninguno es producción, así que conviene tenerlos enumerados para que
-   un hallazgo nuevo se note:
-   `Orchestrator.LspServer.ManualVerification` y `Orchestrator.PipelineVerification` son los dos
-   arneses de verificación manual —están nombrados así a propósito—, y
-   `Orchestrator.Agents.Tests` lanza `node` para ejercitar el hook de alcance de archivos y el
-   runner de procesos (ver la excepción de la regla 3).
+   producción, solo `Orchestrator.Agents`, `Orchestrator.Lsp`, `Orchestrator.LspServer` y
+   `Orchestrator.Runtime`. Otros cuatro aparecen en el grep y ninguno es producción, así que
+   conviene tenerlos enumerados para que un hallazgo nuevo se note:
+   `Orchestrator.LspServer.ManualVerification`, `Orchestrator.PipelineVerification` y
+   `Orchestrator.GeneratedAppVerification` son los arneses de verificación manual —están
+   nombrados así a propósito—, y `Orchestrator.Agents.Tests` lanza `node` para ejercitar el hook
+   de alcance de archivos y el runner de procesos (ver la excepción de la regla 3).
    *Si algo quedó vivo:* `powershell.exe -ExecutionPolicy Bypass -File tools/kill-language-servers.ps1`.
    Las dos partes son cicatrices: `pwsh` no está instalado (Bloque 4) y la política de ejecución
    rechaza el script sin el flag (Bloque 5). Una red de seguridad que no arranca es una red de
@@ -59,7 +60,7 @@ la máquina de estados sin gastar cuota del plan Pro (ADR-001).
    Esta regla **existe por ADR-001**: el límite de 5 h del plan Pro se agota justo cuando más
    se necesita, depurando la máquina de estados. No es preferencia de estilo — es la
    diferencia entre poder iterar el grafo cien veces por día y no poder.
-   *Verificable con:* la suite completa corre sin red y sin `claude` en el `PATH` — **252 tests**.
+   *Verificable con:* la suite completa corre sin red y sin `claude` en el `PATH` — **277 tests**.
    Si un test tarda minutos, está invocando algo real. Ojo con lo que el Bloque 5 sumó al
    workspace generado: `dotnet restore` y `npm ci` **sí** necesitan red, y por eso viven en
    `GeneratedWorkspaceRestorer`, que la suite ejercita contra un runner de procesos guionado y
@@ -94,6 +95,7 @@ la máquina de estados sin gastar cuota del plan Pro (ADR-001).
 | **`Orchestrator.Application`** ✅ | `GraphRunner` (la máquina de estados), `GateEvaluator` (la política de `indexing`), `SpecParser`, `PlanParser`, `AgentPrompts`. | Domain |
 | **`Orchestrator.Agents`** ✅ | `ClaudeCodeAgentRunner` sobre `claude -p`, `ClaudeCodeCommandLine` (los flags, como función pura), `GeneratedWorkspacePreparer` y `GeneratedWorkspaceRestorer` (el workspace de cero y el esqueleto de ADR-016), y `AgentEnvironmentCheck` (los sondeos de arranque). | Domain |
 | **`Orchestrator.Lsp`** ✅ | `LspServerHost` (dueño del proceso del servidor MCP y de la sesión cliente), `McpLanguageServerGateway` y `DiagnosticTranslation`. Traduce el `DiagnosticItem` del contrato al `Diagnostic` del dominio. | Domain |
+| **`Orchestrator.Runtime`** ✅ | `GeneratedApplicationVerifier` (el gate de runtime de ADR-017: levanta la app generada, descubre sus rutas por OpenAPI y las ejercita), `GeneratedApplicationProcess` y `OpenApiRoutes` —las reglas de selección de rutas como función pura, testeables sin arrancar nada—. Traduce un 500 al `Diagnostic` del dominio, para que el grafo lo trate igual que a un error de compilación. | Domain |
 | **`Orchestrator.LspServer`** ✅ | El servidor MCP: host ASP.NET Core que expone las cinco tools de `docs/mcp-contract.md` por HTTP y es dueño de los dos language servers. Habla LSP con `StreamJsonRpc`. **No depende de `Domain`** — es agnóstico del proyecto que analiza (ADR-010, ADR-013). | Nada del repo |
 | **`Orchestrator.Observability`** ✅ | `JsonlRunObserver` y `ConsoleRunObserver`: las dos lecturas del mismo flujo de eventos (ADR-015). Existe como proyecto aparte para que escribir archivos quede fuera de `Application`. | Domain |
 | **`Orchestrator.Cli`** ✅ | Host de consola: `CommandLineParser` (los argumentos, como función pura), `RepositoryLayout` y el wiring. Es el único `Main` del lado del orquestador, y no tiene lógica de orquestación: arma los colaboradores en el único orden que funciona y traduce la terminación a código de salida. | Todos |
@@ -121,7 +123,15 @@ real de un fake, la regla de oro 3 se cumple sola.
 
 - **Nodo** — un paso del pipeline: un agente de capa (dominio, API .NET, React), el spec
   analyzer, o una verificación contra el gate de LSP. Los identificadores son
-  `spec-analysis`, `<capa>-implementation`, `<capa>-gate`, `completed` y `failed`.
+  `spec-analysis`, `<capa>-implementation`, `<capa>-gate`, `api-runtime`, `completed` y
+  `failed`.
+- **El gate de runtime (`api-runtime`)** — el nodo que pregunta si la app **funciona**, después
+  de que la capa de API pasó el gate que pregunta si **compila** (ADR-017). Existe porque el
+  Bloque 5 produjo una aplicación con tres gates limpios, `dotnet build` en cero y `tsc` en cero,
+  que devolvía 500 en la primera request. Su respuesta es un `DiagnosticSet`, y esa es toda la
+  integración: el fallo de arranque entra al grafo como el mismo tipo de hecho que un error de
+  compilación, así que `LayerMap` lo atribuye y `ReviewPolicy` le aplica el techo y la huella sin
+  saber que vino de una respuesta HTTP.
 - **Arista condicional** — una transición gobernada por un predicado sobre `GraphState`. La
   arista característica del proyecto: *si el gate devuelve diagnostics de error, volver al
   agente de la capa que los produjo, con los diagnostics como input; si no, avanzar.* Vive en
@@ -297,6 +307,8 @@ esperas de indexado porque son rutina y muestra las siguientes porque dejan de s
 | Un test que invoca `claude -p` o un language server real | Consume cuota del plan Pro y vuelve la suite lenta e inestable | Oro 3 |
 | `ANTHROPIC_API_KEY` en cualquier forma | La facturación tiene que correr contra la suscripción | ADR-001 |
 | Confiar en que el agente dice que compiló | Es el problema que el proyecto existe para resolver | ADR-004 |
+| Dar por buena una app porque compila | Compilar y funcionar son preguntas distintas: el Bloque 5 produjo tres gates limpios y un 500 en la primera request, desde código válido escrito alrededor de una creencia falsa sobre EF Core. No hay diagnostic para una creencia | ADR-017, R4 |
+| Un verificador de runtime que aprueba sin haber ejercitado nada | Falso verde producido por el mecanismo instalado para evitarlos, e idéntico al éxito. Cero rutas es fallo | ADR-017 |
 | Un ciclo del grafo sin límite de iteraciones | Agota la cuota en una corrida | ADR-003 |
 | Consultar el gate antes de que el language server terminó de indexar | Falso verde: aprueba código que no compila | ADR-006 |
 | Abrir un documento en el language server y no volver a sincronizarlo | Falso rojo: el servidor contesta sobre el texto que le dieron, así que el gate reporta para siempre el error que el agente ya arregló | Bloque 4, `DocumentSynchronizer` |
