@@ -47,6 +47,39 @@ public sealed class FakeWorkspace
     /// <summary>Diagnostics that belong to no layer at all, to exercise the unattributable case.</summary>
     public List<Diagnostic> OrphanDiagnostics { get; } = [];
 
+    /// <summary>
+    /// Why the generated application does not run, or null when it does.
+    /// </summary>
+    /// <remarks>
+    /// Kept here, in the shared scenario, rather than scripted into the verifier — for the same
+    /// reason the diagnostics are. A run where the agent fixes the startup failure has to be a run
+    /// where something the verifier reads actually changed, or the test would prove that the loop
+    /// converges when told to, which is not the question.
+    /// </remarks>
+    public string? RuntimeFailure { get; set; }
+
+    /// <summary>
+    /// How many endpoints the runtime verifier can find. Zero is a failure, not a pass.
+    /// </summary>
+    /// <remarks>
+    /// It is settable because "the application exposes nothing to call" is a case with its own
+    /// test: a verifier that approved it would be approving an application it never exercised.
+    /// </remarks>
+    public int DiscoverableRoutes { get; set; } = 3;
+
+    /// <summary>The application compiles and does not run.</summary>
+    public FakeWorkspace BreakAtRuntime(string reason)
+    {
+        RuntimeFailure = reason;
+        return this;
+    }
+
+    public FakeWorkspace RepairRuntime()
+    {
+        RuntimeFailure = null;
+        return this;
+    }
+
     public FakeWorkspace Break(Layer layer, params Diagnostic[] diagnostics)
     {
         _diagnosticsByLayer[layer].AddRange(diagnostics);

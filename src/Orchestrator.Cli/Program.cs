@@ -5,6 +5,7 @@ using Orchestrator.Cli;
 using Orchestrator.Domain;
 using Orchestrator.Lsp;
 using Orchestrator.Observability;
+using Orchestrator.Runtime;
 
 // The orchestrator's only Main.
 //
@@ -155,12 +156,22 @@ static async Task<int> RunAsync(OrchestratorOptions options, CancellationToken c
     Console.WriteLine($"Running the graph. Log: {logPath}");
     Console.WriteLine();
 
+    // The runtime gate (ADR-017). Always wired in a real run: the graph treats it as optional
+    // because the suite exercises the state machine without it, but a run that skips it is a run
+    // gated on compilation alone — which is exactly what produced an application that passed
+    // three gates and returned 500 on its first request.
+    var applicationVerifier = new GeneratedApplicationVerifier(
+        new ApplicationVerifierSettings { WorkspaceRoot = workspaceRoot },
+        TimeProvider.System);
+
     var runner = new GraphRunner(
         ClaudeCodeAgentRunner.Create(settings, TimeProvider.System),
         lspServer.CreateGateway(),
         observer,
         TimeProvider.System,
-        new GraphPolicy { MaximumAttemptsPerNode = options.MaximumAttemptsPerNode });
+        new GraphPolicy { MaximumAttemptsPerNode = options.MaximumAttemptsPerNode },
+        layerMap: null,
+        applicationVerifier);
 
     var finalState = await runner.RunAsync(spec, cancellationToken);
     var termination = finalState.Termination!;

@@ -67,7 +67,9 @@ public sealed class ArchitectureTests
         var implementations = new[] { DomainAssembly, ApplicationAssembly, typeof(FakeAgentRunner).Assembly, typeof(ArchitectureTests).Assembly }
             .SelectMany(assembly => assembly.GetTypes())
             .Where(type => type is { IsAbstract: false, IsInterface: false })
-            .Where(type => typeof(IAgentRunner).IsAssignableFrom(type) || typeof(ILanguageServerGateway).IsAssignableFrom(type))
+            .Where(type => typeof(IAgentRunner).IsAssignableFrom(type)
+                || typeof(ILanguageServerGateway).IsAssignableFrom(type)
+                || typeof(IApplicationVerifier).IsAssignableFrom(type))
             .ToList();
 
         Assert.NotEmpty(implementations);
@@ -94,6 +96,7 @@ public sealed class ArchitectureTests
     [Theory]
     [InlineData("Orchestrator.Agents")]
     [InlineData("Orchestrator.Lsp")]
+    [InlineData("Orchestrator.Runtime")]
     public void The_graphs_suite_does_not_reference_the_real_adapters(string adapterAssemblyName)
     {
         var reachable = new[] { DomainAssembly, ApplicationAssembly, typeof(FakeAgentRunner).Assembly, typeof(ArchitectureTests).Assembly }

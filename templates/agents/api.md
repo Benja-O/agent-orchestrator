@@ -31,6 +31,18 @@ Inventar una firma y descubrir en la compilación que no existía es el error qu
 3. **La operación rechazada no deja rastro.** Si el dominio rechaza el cambio, no se persiste nada. El estado consultado después tiene que ser idéntico al de antes.
 4. **Persistencia con Entity Framework Core, proveedor InMemory.** Sin migraciones, sin base de datos externa, sin cadena de conexión.
 5. **Nada de atributos de persistencia en las entidades de dominio.** Si EF necesita configuración, va en el `DbContext`, no anotando el dominio.
+6. **La app tiene que exponer su documento OpenAPI.** `builder.Services.AddOpenApi()` y `app.MapOpenApi()` en `Program.cs`, sin excepción. No es una feature: es cómo el orquestador descubre qué endpoints elegiste para poder comprobar que la aplicación arranca y contesta. Sin eso, tu capa no se puede verificar y la corrida te la devuelve.
+
+## El gate no termina en la compilación
+
+Tu código va a compilar y eso **no alcanza**. Después del gate de compilación, el orquestador **levanta la aplicación de verdad y le pega a tus endpoints**. Un 500 vuelve a vos con la excepción completa.
+
+Esto existe por un caso real: una corrida anterior escribió `modelBuilder.Property("_dependencias")` sobre un `HashSet<>` de value objects, con un comentario afirmando que el proveedor InMemory de EF Core las mapea directo. **No las mapea.** Compilaba perfecto y la primera request devolvía 500.
+
+De ahí, dos reglas concretas:
+
+- **No afirmes lo que hace una librería, comprobalo.** Si no estás seguro de cómo EF Core mapea algo, la forma segura es la explícita: conversores de valor, tipos owned, o una entidad de persistencia aparte que traduzca desde el dominio.
+- **Una colección de value objects no se persiste sola.** Es exactamente el caso que rompió antes.
 
 ## Verificá antes de terminar
 

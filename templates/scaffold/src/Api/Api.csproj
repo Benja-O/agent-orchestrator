@@ -19,4 +19,14 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.10" />
   </ItemGroup>
 
+  <!--
+    OpenAPI is here so the application can be verified, not so it can be browsed. The runtime
+    gate (ADR-017) reads the document to learn which endpoints exist, because the spec
+    deliberately names none and the API agent chooses them. Without it the orchestrator would
+    have to either guess routes or dictate them, and both are worse.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
+  </ItemGroup>
+
 </Project>

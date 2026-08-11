@@ -14,6 +14,8 @@
   <Project Path="Orchestrator.LspServer.Tests/Orchestrator.LspServer.Tests.csproj" />
   <Project Path="Orchestrator.LspServer/Orchestrator.LspServer.csproj" />
   <Project Path="Orchestrator.Observability/Orchestrator.Observability.csproj" />
+  <Project Path="Orchestrator.Runtime/Orchestrator.Runtime.csproj" />
+  <Project Path="Orchestrator.Runtime.Tests/Orchestrator.Runtime.Tests.csproj" />
   <Project Path="Orchestrator.PipelineVerification/Orchestrator.PipelineVerification.csproj" />
   <Project Path="Orchestrator.Observability.Tests/Orchestrator.Observability.Tests.csproj" />
   <Project Path="Orchestrator.TestSupport/Orchestrator.TestSupport.csproj" />

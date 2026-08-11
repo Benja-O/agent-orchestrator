@@ -53,14 +53,22 @@ public sealed class GraphRunner
     private readonly TimeProvider _timeProvider;
     private readonly GraphPolicy _policy;
     private readonly LayerMap _layerMap;
+    private readonly IApplicationVerifier? _applicationVerifier;
 
+    /// <param name="applicationVerifier">
+    /// The runtime gate. When absent the graph verifies compilation only, which is what every
+    /// test of the state machine wants and what no real run should ever do — block 5 produced an
+    /// application that passed three compile gates and returned 500 on its first request
+    /// (ADR-017). <c>Orchestrator.Cli</c> always supplies one.
+    /// </param>
     public GraphRunner(
         IAgentRunner agentRunner,
         ILanguageServerGateway gateway,
         IRunObserver observer,
         TimeProvider timeProvider,
         GraphPolicy? policy = null,
-        LayerMap? layerMap = null)
+        LayerMap? layerMap = null,
+        IApplicationVerifier? applicationVerifier = null)
     {
         _policy = policy ?? GraphPolicy.Default;
         _policy.Validate();
@@ -69,6 +77,7 @@ public sealed class GraphRunner
         _observer = observer;
         _timeProvider = timeProvider;
         _layerMap = layerMap ?? LayerMap.Default;
+        _applicationVerifier = applicationVerifier;
         _gateEvaluator = new GateEvaluator(gateway, observer, timeProvider, _policy);
     }
 
@@ -287,6 +296,21 @@ public sealed class GraphRunner
 
             var responsible = FirstBlockingLayer(verdictByLayer, stageIndex);
 
+            // The runtime gate. Only when the code compiles — running an application that does
+            // not build tells you nothing you did not already know — and only after the API
+            // stage, which is the one runnable artefact, so a failure is caught before the
+            // frontend's turn is paid for.
+            if (responsible is null && layer == Layer.Api && _applicationVerifier is not null)
+            {
+                var runtimeVerdict = await VerifyApplicationAsync(state, cancellationToken).ConfigureAwait(false);
+
+                if (runtimeVerdict.HasBlockingItems)
+                {
+                    verdictByLayer = MergeRuntimeFailures(verdictByLayer, runtimeVerdict);
+                    responsible = Layer.Api;
+                }
+            }
+
             if (responsible is null)
             {
                 state = RecordVerdicts(state, verdictByLayer);
@@ -344,6 +368,66 @@ public sealed class GraphRunner
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Starts the generated application and asks whether it works.
+    /// </summary>
+    /// <remarks>
+    /// The node exists because compiling and working turned out to be different questions in
+    /// practice, not just in theory (ADR-017, R4). It is entered like any other node — attempt
+    /// counted, event observed — so the run's trace shows it, and its answer is a
+    /// <see cref="DiagnosticSet"/> so that everything downstream treats "it does not start" the
+    /// way it already treats "it does not compile".
+    /// </remarks>
+    private async Task<DiagnosticSet> VerifyApplicationAsync(GraphState state, CancellationToken cancellationToken)
+    {
+        Observe(new NodeEntered
+        {
+            RunId = state.RunId,
+            Timestamp = _timeProvider.GetUtcNow(),
+            Node = NodeId.ApiRuntime,
+            Attempt = state.AttemptsOf(NodeId.ApiRuntime) + 1,
+            Layer = LayerCatalog.AgentNameOf(Layer.Api),
+        });
+
+        var verification = await _applicationVerifier!.VerifyAsync(cancellationToken).ConfigureAwait(false);
+
+        Observe(new ApplicationVerified
+        {
+            RunId = state.RunId,
+            Timestamp = _timeProvider.GetUtcNow(),
+            RoutesExercised = verification.RoutesExercised,
+            ErrorCount = verification.Diagnostics.BlockingItems.Count,
+            FailureSample = verification.Diagnostics.BlockingItems.Take(3).Select(item => item.Message).ToList(),
+        });
+
+        return verification.Diagnostics;
+    }
+
+    /// <summary>
+    /// Folds runtime failures into the API layer's verdict.
+    /// </summary>
+    /// <remarks>
+    /// Merging rather than handling separately is what buys the whole feature for almost no code:
+    /// the attempt ceiling, the non-progress fingerprint and the review prompt all operate on this
+    /// set, so an agent that hands back the same startup failure twice stops the run for exactly
+    /// the reason it would if it had handed back the same compile error twice.
+    /// </remarks>
+    private static IReadOnlyDictionary<Layer, DiagnosticSet> MergeRuntimeFailures(
+        IReadOnlyDictionary<Layer, DiagnosticSet> verdictByLayer, DiagnosticSet runtime)
+    {
+        var merged = verdictByLayer.ToDictionary(entry => entry.Key, entry => entry.Value);
+        var api = merged[Layer.Api];
+
+        merged[Layer.Api] = new DiagnosticSet
+        {
+            Items = [.. api.Items, .. runtime.Items],
+            Total = api.Total + runtime.Total,
+            Truncated = api.Truncated,
+        };
+
+        return merged;
     }
 
     /// <summary>Splits one workspace-wide verdict into the per-layer verdicts the review policy compares.</summary>

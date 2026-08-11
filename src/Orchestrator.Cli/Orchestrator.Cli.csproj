@@ -11,6 +11,7 @@
     <ProjectReference Include="..\Orchestrator.Domain\Orchestrator.Domain.csproj" />
     <ProjectReference Include="..\Orchestrator.Lsp\Orchestrator.Lsp.csproj" />
     <ProjectReference Include="..\Orchestrator.Observability\Orchestrator.Observability.csproj" />
+    <ProjectReference Include="..\Orchestrator.Runtime\Orchestrator.Runtime.csproj" />
   </ItemGroup>
 
   <!--

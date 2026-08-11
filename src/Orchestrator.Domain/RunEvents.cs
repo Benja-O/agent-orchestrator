@@ -213,6 +213,44 @@ public sealed record GateEvaluated : RunEvent
     }
 }
 
+/// <summary>The generated application was started and asked to do something.</summary>
+/// <remarks>
+/// The event that separates "it compiles" from "it works", and the one worth watching in the
+/// demo for the same reason it exists: block 5's first full run passed every compile gate and
+/// produced an application whose first request returned 500. <see cref="RoutesExercised"/> is in
+/// here because zero is a failure, not a pass — a verifier that approves because it found nothing
+/// to try is the false green wearing yet another hat.
+/// </remarks>
+public sealed record ApplicationVerified : RunEvent
+{
+    /// <summary>How many endpoints were actually called.</summary>
+    public required int RoutesExercised { get; init; }
+
+    public required int ErrorCount { get; init; }
+
+    /// <summary>The failures, formatted, so the console explains itself without the JSONL.</summary>
+    public required IReadOnlyList<string> FailureSample { get; init; }
+
+    public override string Event => "application-verified";
+
+    public override string Summary
+    {
+        get
+        {
+            if (ErrorCount == 0)
+            {
+                return $"  runtime: the application starts and answers on {RoutesExercised} endpoint(s).";
+            }
+
+            var sample = FailureSample.Count == 0
+                ? string.Empty
+                : Environment.NewLine + string.Join(Environment.NewLine, FailureSample.Select(line => "      " + line));
+
+            return $"  runtime: {ErrorCount} failure(s) over {RoutesExercised} endpoint(s).{sample}";
+        }
+    }
+}
+
 /// <summary>What one iteration of the review loop actually changed.</summary>
 /// <remarks>
 /// The event the demo is really about. "The agent ran again" says nothing; "the agent removed

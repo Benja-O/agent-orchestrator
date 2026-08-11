@@ -31,6 +31,27 @@ public sealed record AgentTurn
     };
 
     /// <summary>
+    /// The agent wrote code that compiles and does not run.
+    /// </summary>
+    /// <remarks>
+    /// The turn that models what block 5 actually produced: three clean gates and a 500 on the
+    /// first request, from an agent that had written valid C# around a false belief about EF Core.
+    /// No compile diagnostic exists for that, which is exactly why the runtime gate does.
+    /// </remarks>
+    public static AgentTurn BreaksAtRuntime(string reason) => new()
+    {
+        Outcome = AgentOutcome.Completed("Listo, implementé lo pedido."),
+        Effect = workspace => workspace.BreakAtRuntime(reason),
+    };
+
+    /// <summary>The agent fixed the startup failure.</summary>
+    public static AgentTurn FixesRuntime() => new()
+    {
+        Outcome = AgentOutcome.Completed("Listo, corregí la configuración."),
+        Effect = workspace => workspace.RepairRuntime(),
+    };
+
+    /// <summary>
     /// The agent claimed success and changed nothing. The literal definition of non-progress,
     /// and the failure mode this whole project exists to catch (ADR-004).
     /// </summary>

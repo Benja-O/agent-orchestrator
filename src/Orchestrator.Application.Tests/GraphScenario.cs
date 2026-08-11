@@ -33,6 +33,23 @@ internal sealed class GraphScenario
 
     public SpecDocument Spec { get; set; } = Fixture.RealSpec;
 
+    /// <summary>
+    /// The runtime gate, off unless a test asks for it.
+    /// </summary>
+    /// <remarks>
+    /// Off by default so that every test written before ADR-017 keeps describing what it was
+    /// written to describe: a pipeline gated on compilation. The runtime gate has its own tests,
+    /// and mixing it into all of them would make each one answer two questions at once.
+    /// </remarks>
+    public FakeApplicationVerifier? ApplicationVerifier { get; private set; }
+
+    /// <summary>Turns on the node that asks whether the generated application actually runs.</summary>
+    public GraphScenario WithRuntimeGate()
+    {
+        ApplicationVerifier = new FakeApplicationVerifier(Workspace);
+        return this;
+    }
+
     /// <summary>Scripts every layer agent to produce code that compiles on the first pass.</summary>
     public GraphScenario WithEveryLayerClean()
     {
@@ -41,7 +58,8 @@ internal sealed class GraphScenario
     }
 
     public Task<GraphState> RunAsync() =>
-        new GraphRunner(Agents, Gate, Observer, new SteppingTimeProvider(), Policy).RunAsync(Spec, CancellationToken.None);
+        new GraphRunner(Agents, Gate, Observer, new SteppingTimeProvider(), Policy, layerMap: null, ApplicationVerifier)
+            .RunAsync(Spec, CancellationToken.None);
 
     /// <summary>The agents the graph invoked, in order. The shape of the run in one list.</summary>
     public IReadOnlyList<string> InvokedAgents => Agents.Invocations.Select(invocation => invocation.AgentName).ToList();
