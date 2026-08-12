@@ -177,18 +177,32 @@ public sealed class RuntimeGateTests
     }
 
     /// <summary>The run's trace shows the node, so the log explains a failure nobody expected.</summary>
+    /// <remarks>
+    /// The trace is asserted separately from the event on purpose: the two came apart once. The
+    /// node emitted its <c>node-entered</c> without going through
+    /// <see cref="GraphState.Entering"/>, so it showed up while the run was narrated and was
+    /// missing from the summary the run ends with — which is the line anyone reading a finished
+    /// log looks at first.
+    /// </remarks>
     [Fact]
     public async Task The_runtime_check_is_visible_in_the_log()
     {
         var scenario = new GraphScenario().WithEveryLayerClean().WithRuntimeGate();
 
-        await scenario.RunAsync();
+        var state = await scenario.RunAsync();
 
         var verified = Assert.Single(scenario.Observer.Events.OfType<ApplicationVerified>());
 
         Assert.Equal(0, verified.ErrorCount);
         Assert.True(verified.RoutesExercised > 0, "a clean verdict has to say how many endpoints it actually called.");
-        Assert.Contains(NodeId.ApiRuntime.Value, scenario.Observer.Events.OfType<NodeEntered>().Select(entered => entered.Node.Value));
+
+        var entered = Assert.Single(
+            scenario.Observer.Events.OfType<NodeEntered>(),
+            node => node.Node == NodeId.ApiRuntime);
+
+        Assert.Equal(1, entered.Attempt);
+        Assert.Contains(NodeId.ApiRuntime, state.Trace);
+        Assert.Contains(NodeId.ApiRuntime.Value, Assert.Single(scenario.Observer.Events.OfType<RunTerminated>()).Trace);
     }
 
     /// <summary>Without a verifier the graph is gated on compilation alone, and never pretends otherwise.</summary>

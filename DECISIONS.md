@@ -30,6 +30,7 @@
 
 | ADR | Título corto | Área | Estado |
 |---|---|---|---|
+| ADR-018 | La entrega: repo público, y la evidencia viaja con él | Entrega / Repositorio | Aceptada |
 | ADR-017 | Gate de runtime: un nodo que pregunta si la app funciona, no si compila | Grafo / Gate | Aceptada |
 | ADR-016 | El esqueleto del proyecto generado lo escribe el orquestador, no un agente | Workspace / Gate | Aceptada |
 | ADR-015 | Observabilidad del grafo: eventos tipados con doble lectura, JSONL y consola | Observabilidad / Producto | Aceptada |
@@ -49,6 +50,47 @@
 | ADR-001 | Claude Code CLI headless (`claude -p`), no la API de Anthropic | Agentes / Costo | Aceptada |
 
 ---
+
+## ADR-018 — La entrega: repo público, y la evidencia viaja con él
+**Fecha:** 2026-08-12
+**Estado:** Aceptada
+**ADRs relacionados:** ADR-008 (dos repos, y por qué), ADR-015 (el log como única ventana a una corrida), ADR-001 (la cuota que quien evalúa no tiene), ADR-007 (sin UI ni persistencia).
+
+### Contexto
+La única decisión que el Bloque 6 tenía abierta, y es de entrega y no técnica. `CLAUDE.md` registraba que el repo era git local sin remoto y que el dónde se definía acá; ADR-008 ya había fijado el cómo —dos repos, el orquestador y la app generada— hace cinco bloques.
+
+Lo que obliga a decidirlo bien no es dónde se hostea, sino una consecuencia práctica que se ve recién al mirar el repo desde afuera: **`output/` y `logs/` están los dos gitignoreados, y las dos cosas que este proyecto tiene para mostrar viven ahí.** Un evaluador que clona este repo obtiene el orquestador y ninguna prueba de que funcione. La única forma de obtenerla sería correr el pipeline, que **gasta cuota del plan Pro** y tarda 18 minutos.
+
+*"Corré el pipeline y vas a ver"* no es una respuesta para quien evalúa sin cuota. Es, de hecho, exactamente el anti-patrón que el proyecto persigue desde el Bloque 0 —pedir que se confíe en una afirmación en vez de mostrar la evidencia— aplicado a la entrega misma.
+
+### Decisión
+
+**1. El repo del orquestador se publica público en GitHub, con el historial de commits entero.** El briefing dice que el foco es el proceso y no el resultado, así que **el historial es parte del entregable**: los mensajes de commit registran qué se descubrió en cada bloque y en qué orden. Entregar un zip conservaría los archivos y perdería precisamente eso — y un repo privado con invitación paga fricción de coordinación a cambio de proteger algo que no es sensible.
+
+**2. La app generada viaja en su propio repo**, producida a partir de la corrida del 2026-08-11 (`run-20260811-151703`), con un README escrito a mano que aclara que es output del orquestador y no trabajo manual. Es ADR-008 ejecutado, no una decisión nueva. Van los fuentes y el `package-lock.json`; no van `bin/`, `obj/` ni `node_modules/`.
+
+**3. Y lo que esta decisión agrega: tres logs de corridas reales se versionan en `docs/evidence/`.** No es un directorio de logs —`logs/` sigue gitignoreado y desechable— sino tres copias inmutables elegidas por lo que muestran:
+
+| Log | Qué prueba |
+|---|---|
+| `run-20260811-151703.jsonl` | El camino feliz completo: 17 min 52 s, cuatro turnos, las tres capas y el gate de runtime |
+| `run-20260811-132014.jsonl` | La corrida anterior, que terminó `completed` **con una app que devolvía 500**. El log que miente sin saberlo |
+| `pipeline-verification-20260810-091708.jsonl` | El loop de revisión devolviendo un error inyectado y corrigiéndolo, **y** una terminación por techo de iteraciones con su traza |
+
+La segunda y la tercera importan más que la primera, y por eso están las tres. Un solo log del camino feliz es la clase de evidencia que este proyecto decidió no aceptar en ningún otro lado: prueba que una corrida salió bien, no que el mecanismo funcione. La corrida que miente y la corrida que se detiene contra un techo muestran el pipeline haciendo lo que se le pide **cuando algo sale mal**, que es cuando importa.
+
+### Alternativas
+- **Repo privado con invitación** → descartado. Mismo beneficio de historial, y a cambio hay que saber el usuario de GitHub de quien evalúa y coordinar un acceso. No hay nada en el repo que justifique pagar esa fricción: no hay credenciales, y el `NuGet.config` apunta a un feed público.
+- **No publicar: entregar un bundle de git o un zip con el `.git` adentro** → descartado. El historial viajaría, pero se lee mucho peor y ningún enlace de los documentos resuelve. Los cinco documentos de este repo se citan entre sí constantemente; en GitHub eso es navegable y en un zip no.
+- **La app generada como rama o release de este mismo repo** → descartado, y es lo que ADR-008 ya había descartado: mezcla generado y manual en un historial y borra la distinción que el evaluador va a querer hacer. Habría requerido un ADR que superseda a ADR-008, no uno que lo complemente.
+- **No versionar ningún log, y proyectar la demo en vivo** → descartado. Es lo barato y funciona *durante* la presentación; deja sin nada a quien lea el repo antes o después de ella, que es la mayor parte del tiempo que el repo va a existir.
+- **Versionar `logs/` entero en vez de tres archivos elegidos** → descartado. Convierte un directorio desechable en uno versionado, invita a que crezca sin criterio, y entierra los tres logs que dicen algo entre corridas de depuración que no dicen nada.
+
+### Consecuencias
+- **`docs/evidence/` tiene su propio README explicando qué mirar en cada log y en qué línea.** Un JSONL crudo es evidencia solo para quien ya sabe qué busca; sin esa guía, versionarlos sería ceremonia.
+- **La evidencia envejece y el README lo dice.** Los tres logs son de corridas fechadas contra el código de ese día; el de `pipeline-verification` muestra un modo de fallo —el workspace sin restaurar— que ADR-016 cerró después. Se deja igual, con la nota: un log que muestra un defecto ya arreglado sigue siendo la mejor prueba de que el defecto existía.
+- **Publicar hace que las cicatrices del repo sean visibles**, y eso es deliberado. Los documentos registran cuatro veces que Roslyn se calla en vez de fallar, dos veces que la verificación misma estaba rota, y una que la barrera de seguridad no estaba instalada. Un repo público donde eso está escrito dice más sobre cómo se trabajó que uno donde solo está el resultado.
+- **La deuda D14 se vuelve visible al primero que clone**: el CLI corre desde el repositorio, no desde una instalación, así que busca `templates/` caminando hacia arriba desde su propio ejecutable. Sigue siendo aceptable —el desafío se evalúa corriendo el repo— pero ahora hay que decirlo en el README y no solo en el ROADMAP.
 
 ## ADR-017 — Gate de runtime: un nodo que pregunta si la app funciona, no si compila
 **Fecha:** 2026-08-11

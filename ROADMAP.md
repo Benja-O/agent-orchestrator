@@ -15,7 +15,7 @@
 
 ---
 
-## Estado (2026-08-11) — Bloques 0 a 5 cerrados; próximo: Bloque 6
+## Estado (2026-08-12) — ✅ Proyecto cerrado. Los seis bloques cumplieron su criterio de salida
 
 **El pipeline produce la aplicación pedida, de punta a punta y sin intervención.** Un spec SDD
 entra por `Orchestrator.Cli`, y salen tres capas que compilan, una app que arranca y una regla de
@@ -23,6 +23,12 @@ negocio que se sostiene desde afuera. Las tres partes del criterio de salida est
 comandos, no con afirmaciones.
 
 **277 tests**, sin red, sin `claude` y sin language servers.
+
+**El Bloque 6 entregó:** el [README.md](README.md) real, con la arquitectura del grafo, la integración
+LSP, la integración con Claude Code y **el catálogo de los nueve fallos silenciosos** —la sección que
+resultó ser el proyecto—; **ADR-018**, la decisión de entrega; y tres logs de corridas reales
+versionados en [docs/evidence/](docs/evidence/), porque `logs/` está gitignoreado y sin eso publicar el
+repo habría dejado a quien evalúa sin ninguna prueba salvo gastando cuota.
 
 **El Bloque 5 encontró el escalón que faltaba entre "compila" y "hace lo que se pidió": "arranca".**
 Su primera corrida completa pasó los tres gates de compilación —`dotnet build` en cero, `tsc` en
@@ -35,11 +41,7 @@ grafo como un `Diagnostic` más y por eso no necesitó ni una arista nueva.
 **es aparato del gate y no producto** — si sale mal, el gate contesta con seguridad sobre un
 subconjunto del código y el resto parece limpio.
 
-**Plazo: vie 2026-08-07 → lun 2026-08-24 (17 días).** El proyecto va **13 días adelantado**: el
-Bloque 5 estaba planificado para el 21-22/08 y cerró el 11/08.
-
-**Lo próximo — Bloque 6.** Pulido, README real y demo ensayada. Es el único bloque que queda y no
-tiene deuda que lo bloquee.
+**Plazo: vie 2026-08-07 → lun 2026-08-24 (17 días). Cerrado el 12/08, con 12 días de margen.**
 
 ---
 
@@ -53,7 +55,7 @@ tiene deuda que lo bloquee.
 | **3** | mié 12 – dom 16/08 | Esqueleto del grafo (estado, nodos, transiciones) + Spec Analyzer | El grafo corre end-to-end contra `FakeAgentRunner` y `FakeLanguageServer`, incluido el ciclo de revisión y las tres vías de terminación. La suite corre sin `claude` en el `PATH` | ✅ 09/08 |
 | **4** | lun 17 – vie 21/08 | Agentes de capa (dominio, API .NET, React) + loop de revisión contra diagnostics reales | Un error inyectado a propósito hace volver el grafo al agente de esa capa, y la siguiente iteración lo corrige. Visible en el log | ✅ 10/08 |
 | **5** | vie 21 – sáb 22/08 | Primera corrida completa: spec → app compilable | `output/` se genera de cero, la app compila, y el endpoint que intenta violar la invariante de ADR-009 la rechaza | ✅ 11/08 |
-| **6** | dom 23 – lun 24/08 | Pulido, README real, `DECISIONS.md` al día, demo ensayada | El README explica la arquitectura del grafo, la integración LSP y la integración con Claude Code. La demo corre de principio a fin sin intervención | ⬜ |
+| **6** | dom 23 – lun 24/08 | Pulido, README real, `DECISIONS.md` al día, demo ensayada | El README explica la arquitectura del grafo, la integración LSP y la integración con Claude Code. La demo corre de principio a fin sin intervención | ✅ 12/08 |
 
 **Los bloques 2 y 3 se solapan a propósito.** El grafo se construye contra
 `FakeLanguageServer` mientras el servidor MCP real se termina — es la regla de oro 3 de
@@ -101,6 +103,12 @@ del orquestador, y ADR-015, observabilidad del grafo.
 
 > Los números corrieron: ADR-013 se usó en el Bloque 2 para el lenguaje y la topología del
 > servidor MCP, que era la decisión que ADR-002 había dejado abierta "hasta el Bloque 2".
+
+**Y la última que quedaba fuera de esa lista, cerrada el 12/08.** `CLAUDE.md` registraba que el repo
+era git local sin remoto y que el dónde se definía en el Bloque 6: es **ADR-018**. No estaba acá porque
+no es una decisión de arquitectura sino de entrega, y conviene dejar dicho que estuvo abierta hasta el
+final a propósito — publicar es irreversible y no había ninguna razón para decidirlo antes de tener qué
+publicar.
 
 **Y ya no queda ninguno en `Propuesta`.** ADR-011 era el último: el Bloque 4 lo corrió headless,
 encontró que cuatro de sus mecanismos no funcionaban como estaban descritos —ninguno de los cuatro
@@ -196,6 +204,57 @@ retomar si el proyecto continuara.
 ---
 
 ## Historial completado
+
+### ✅ Bloque 6 — La entrega (2026-08-12)
+
+El único bloque que no construyó nada nuevo. El entregable es que alguien que abre el repo por primera
+vez entienda **por qué** cada decisión es como es, sin que se lo cuenten — así que el trabajo fue de
+selección y puesta en escena sobre material que ya estaba escrito, no de redacción.
+
+**Criterio de salida, cumplido en sus dos partes:**
+
+| Parte | Evidencia |
+|---|---|
+| El README explica la arquitectura del grafo, la integración LSP y la integración con Claude Code | [README.md](README.md), secciones 1 a 3, cada afirmación enlazada al ADR que la decidió |
+| La demo corre de principio a fin sin intervención | Ensayada hoy en sus dos tramos que no gastan cuota: `dotnet build output/App.slnx` → **0 errores**, y `Orchestrator.GeneratedAppVerification` → **CRITERIO CUMPLIDO**, con CA-05, CA-06, CA-07 y CA-08 en verde sobre la app de la corrida del 11/08 |
+
+**Lo que el README terminó siendo, y no era lo previsto.** El prompt del bloque anticipaba tres
+secciones y una cuarta "que sale gratis": la lista de modos de fallo silencioso documentados con
+evidencia. Al escribirla resultó que **son nueve**, que ninguno se manifiesta como un error, y que la
+única generalización honesta que el repo puede hacer es esa: *todos se ven idénticos al éxito*. Esa
+sección quedó como el centro del documento y las otras tres como contexto para leerla — al revés de
+como estaba planeado.
+
+**R2 se respetó: no se agregó ni una feature.** Era el riesgo declarado de este bloque y el más fácil
+de materializar. Lo único que se tocó del código fue un defecto encontrado al releer el grafo para
+describirlo (abajo).
+
+**Un defecto encontrado escribiendo la documentación, que es de dónde salen los buenos.** Al
+documentar la traza del grafo apareció que `api-runtime` **emitía su evento `node-entered` sin pasar
+por `GraphState.Entering`**: el nodo aparecía mientras la corrida se narraba y faltaba en el `trace`
+del `run-terminated`, que es la línea que alguien lee primero en un log terminado. Su contador de
+intentos, además, estaba clavado en 1 —`AttemptsOf(...) + 1` sobre un contador que nunca avanzaba—.
+El XML doc del método afirmaba lo contrario, y el test que lo cubría se llamaba *"the run's trace
+shows the node"* y verificaba solamente el evento. **El nombre del test decía la verdad y el test no
+la comprobaba**; ahora sí, contra la traza del estado y contra la del evento de terminación.
+
+Se ve en `docs/evidence/run-20260811-151703.jsonl`: la línea 16 muestra `api-runtime` entrando y la
+línea 23 lista siete nodos sin él. El log versionado queda como está, con el defecto adentro — es de
+una corrida anterior al arreglo y reescribirlo sería falsificar evidencia.
+
+**ADR-018 cierra la última decisión abierta del proyecto**, que era de entrega y no técnica: el repo
+se publica público en GitHub, la app generada viaja en su propio repo (ADR-008, ejecutado), y —lo que
+la decisión agregó— **tres logs de corridas reales se versionan en `docs/evidence/`**. `logs/` está
+gitignoreado, así que publicar sin eso habría dejado a quien evalúa sin ninguna prueba de que el
+pipeline funciona salvo gastando 18 minutos de cuota Pro. *"Corré el pipeline y vas a ver"* es el
+anti-patrón del proyecto aplicado a su propia entrega.
+
+**Y los tres logs se eligieron con el mismo criterio que todo lo demás: dos de ellos muestran el
+pipeline fallando.** Uno es el camino feliz; otro es la corrida que terminó `completed` con una app
+que devolvía 500 —el log que miente sin saberlo—; el tercero muestra el loop de revisión corrigiendo
+un error inyectado **y** después deteniéndose contra el techo de iteraciones. Un solo log del camino
+feliz habría sido exactamente la clase de evidencia que este proyecto decidió no aceptar en ningún
+otro lado.
 
 ### ✅ Bloque 5 — La corrida completa, y el escalón que faltaba entre compilar y funcionar (2026-08-11)
 

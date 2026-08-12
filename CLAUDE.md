@@ -228,5 +228,6 @@ Convencionales, en inglés, con scope: `feat(graph):`, `fix(lsp):`, `docs(adr):`
 La prosa de los documentos va en español; identificadores, logs, mensajes de commit y
 comentarios de código, en inglés.
 
-Repo git local, sin remoto por ahora. Si se decide publicarlo para la entrega, se define en
-el Bloque 6.
+**Repo público en GitHub** (ADR-018). El historial de commits es parte del entregable —el foco
+del desafío es el proceso—, así que los mensajes tienen que seguir explicando qué se descubrió y
+no solo qué se tocó.

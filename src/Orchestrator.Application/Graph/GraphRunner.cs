@@ -302,6 +302,7 @@ public sealed class GraphRunner
             // frontend's turn is paid for.
             if (responsible is null && layer == Layer.Api && _applicationVerifier is not null)
             {
+                state = state.Entering(NodeId.ApiRuntime);
                 var runtimeVerdict = await VerifyApplicationAsync(state, cancellationToken).ConfigureAwait(false);
 
                 if (runtimeVerdict.HasBlockingItems)
@@ -375,10 +376,11 @@ public sealed class GraphRunner
     /// </summary>
     /// <remarks>
     /// The node exists because compiling and working turned out to be different questions in
-    /// practice, not just in theory (ADR-017, R4). It is entered like any other node — attempt
-    /// counted, event observed — so the run's trace shows it, and its answer is a
-    /// <see cref="DiagnosticSet"/> so that everything downstream treats "it does not start" the
-    /// way it already treats "it does not compile".
+    /// practice, not just in theory (ADR-017, R4). It is entered like any other node — the caller
+    /// does <see cref="GraphState.Entering"/> before calling this, so the attempt is counted and
+    /// the node lands in the run's trace — and its answer is a <see cref="DiagnosticSet"/> so that
+    /// everything downstream treats "it does not start" the way it already treats "it does not
+    /// compile".
     /// </remarks>
     private async Task<DiagnosticSet> VerifyApplicationAsync(GraphState state, CancellationToken cancellationToken)
     {
@@ -387,7 +389,7 @@ public sealed class GraphRunner
             RunId = state.RunId,
             Timestamp = _timeProvider.GetUtcNow(),
             Node = NodeId.ApiRuntime,
-            Attempt = state.AttemptsOf(NodeId.ApiRuntime) + 1,
+            Attempt = state.AttemptsOf(NodeId.ApiRuntime),
             Layer = LayerCatalog.AgentNameOf(Layer.Api),
         });
 
