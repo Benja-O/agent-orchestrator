@@ -31,6 +31,10 @@ node_modules/
 npm-debug.log*
 yarn-error.log*
 
+# --- Notas personales de preparación de la entrevista ---
+# El repo es público (ADR-018). Nada de esto es parte del entregable.
+notas-entrevista/
+
 # --- Sistema operativo ---
 Thumbs.db
 Desktop.ini

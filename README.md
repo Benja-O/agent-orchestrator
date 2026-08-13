@@ -294,6 +294,19 @@ dotnet run --project src/Orchestrator.Cli -- --spec specs/gestor-tareas.md --out
 saca esa capa del gate; `--trace-protocol` vuelca el tráfico LSP. Códigos de salida: `0` completó, `1`
 frenó contra un techo, `2` no arrancó.
 
+**La aplicación generada, en el navegador.** Son **dos procesos y dos orígenes**: la API no sirve el
+frontend. **No gasta cuota.**
+
+```bash
+dotnet run --project output/src/Api                    # http://localhost:5000
+cd output/src/Frontend && npm run dev                  # http://localhost:5173  (otra terminal)
+```
+
+Que hagan falta los dos es la razón por la que el prompt del agente de API le exige habilitar CORS en
+`Development`: para el navegador, cada llamada del frontend a la API es cross-origin. Sin esa política
+la API contesta `200` a todo y **la pantalla queda vacía** — un fallo que ningún gate de compilación
+puede ver, de la misma familia que los de [§4](#4-el-catálogo-de-fallos-silenciosos).
+
 **La verificación de que la app hace lo que el spec pedía** — la parte que el gate **no puede** contestar,
 porque verifica compilación y no corrección. Levanta la app generada y comprueba **por HTTP** que CA-06 y
 CA-08 se sostienen: crea dos tareas, declara la dependencia, intenta completar la bloqueada, y verifica
@@ -383,6 +396,11 @@ si el proyecto siguiera:
 - **No hay gate de comportamiento** (D4, D16). El gate de runtime comprueba que la app arranca y contesta,
   no que se comporte; que sostenga RN-01 se verifica desde afuera, con `GeneratedAppVerification`. El paso
   natural es que ese arnés se vuelva un nodo más del grafo.
+- **El gate de runtime es solo de la API** (D17): no hay nodo `frontend-runtime`. De esa capa se sigue
+  sabiendo únicamente que compila. Es lo que quedó abierto de un fallo real —el frontend generado
+  compilaba y **no se podía abrir**, porque el esqueleto no traía bundler— que se cobró el 13/08 poniendo
+  Vite en el scaffold. La lección generaliza la fila 7 de arriba: **el gate pregunta lo que se le enseñó a
+  preguntar**, y durante cinco bloques a esta capa solo se le preguntó si compilaba.
 - **Sin persistencia de corridas** (D1): una corrida interrumpida se reinicia desde cero.
 - **Sin paralelismo entre capas** (D2): el grafo es estrictamente secuencial.
 - **Volver a una capa anterior re-invoca también a las posteriores** (D9), aunque su código no haya

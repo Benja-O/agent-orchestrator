@@ -32,6 +32,18 @@ Inventar una firma y descubrir en la compilación que no existía es el error qu
 4. **Persistencia con Entity Framework Core, proveedor InMemory.** Sin migraciones, sin base de datos externa, sin cadena de conexión.
 5. **Nada de atributos de persistencia en las entidades de dominio.** Si EF necesita configuración, va en el `DbContext`, no anotando el dominio.
 6. **La app tiene que exponer su documento OpenAPI.** `builder.Services.AddOpenApi()` y `app.MapOpenApi()` en `Program.cs`, sin excepción. No es una feature: es cómo el orquestador descubre qué endpoints elegiste para poder comprobar que la aplicación arranca y contesta. Sin eso, tu capa no se puede verificar y la corrida te la devuelve.
+7. **La app tiene que habilitar CORS en `Development`.** El frontend no se sirve desde tu proceso: corre en su propio servidor de desarrollo, en otro puerto, así que para el navegador **cada llamada a tu API es cross-origin**. Sin una política que la acepte, el navegador bloquea las respuestas antes de que el frontend las vea — y lo hace en silencio para vos: tus endpoints contestan 200 y la pantalla queda vacía. Registrá una política permisiva con `builder.Services.AddCors(...)` y aplicala con `app.UseCors(...)` **solo cuando `app.Environment.IsDevelopment()`**; una app generada no se despliega a producción y una política abierta fuera de desarrollo sería un agujero, no una comodidad.
+8. **El estado tiene que sobrevivir entre requests.** Una API es un proceso que atiende muchas requests, y cada una recibe su propio scope. Un agregado con colecciones en memoria registrado con `AddScoped` **nace vacío en cada request**: el `POST` devuelve `201` con un id y el `GET` siguiente devuelve una lista vacía. Persistí de verdad a través del `DbContext` —y llamá a `SaveChanges` en cada operación que modifique algo—, o registrá el almacén en memoria como singleton. **Las dos formas compilan y contestan `200`, y ninguna verificación automática nota la diferencia:** el gate de runtime pega a un `GET` que devuelve `[]` y lo da por bueno. Ya pasó en una corrida real.
+9. **No fijes la dirección en la que escucha la app.** `app.Run()` sin argumentos. Nada de `app.Run("http://…")`, `UseUrls`, `ListenLocalhost` ni un número de puerto escrito en el código. El orquestador te arranca en un puerto que elige él, y **una dirección fija en el código le gana**: la app queda escuchando donde nadie la consulta, arranca perfecto y el gate te devuelve "nunca contestó una request". Es un fallo real de este pipeline, y el diagnóstico que produce no nombra la causa — por eso está escrito acá.
+
+## Si el gate te dice que la app no arranca
+
+Leé el mensaje literal antes de tocar nada, y **corregí lo que hiciste vos**. Concretamente:
+
+- **`address already in use` no es un bug de tu código.** Es el entorno. No escribas código que busque procesos, ni que los mate, ni que cambie de puerto para esquivarlo: la aplicación que estás construyendo es un gestor de tareas, y nada de eso pertenece a un gestor de tareas. Reportá lo que viste y no lo disimules.
+- **"nunca contestó una request" con la app arrancando bien** es casi siempre la regla 8: estás escuchando en una dirección que fijaste vos.
+
+Una corrida real terminó con el agente de esta capa escribiendo una clase que corría `netstat` y mataba el proceso dueño del puerto, dentro de la aplicación generada. Compilaba, pasaba el gate y no arreglaba nada, porque el problema nunca estuvo en el código. **Un diagnóstico que no entendés no es permiso para ampliar el alcance de lo que escribís.**
 
 ## El gate no termina en la compilación
 

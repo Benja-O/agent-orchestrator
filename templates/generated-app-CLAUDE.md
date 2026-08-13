@@ -44,8 +44,12 @@ No declares nada terminado sin haberlo verificado así. El orquestador consulta 
 ## Stack
 
 - Backend en .NET, API HTTP.
-- Frontend en React con TypeScript.
+- Frontend en React con TypeScript, servido por **Vite**. El `vite.config.ts` es parte del esqueleto: no lo escribas ni lo modifiques.
 - Persistencia con Entity Framework Core, proveedor **InMemory**: sin migraciones, sin base de datos externa, sin cadena de conexión.
 - Sin autenticación.
+
+**La API no elige en qué dirección escucha.** La recibe de su configuración —`app.Run()` sin argumentos, y nada de `UseUrls`, `ListenLocalhost` ni un puerto escrito en el código—, porque el orquestador la arranca en un puerto que elige él para verificarla. Una dirección fija en el código gana sobre la que le pasa el orquestador, y entonces la app queda escuchando donde nadie la consulta: **arranca perfecto y el gate reporta que nunca contestó.** Para el uso local, el puerto sale del perfil de arranque, que ya está en el esqueleto.
+
+**Son dos procesos y dos orígenes.** El frontend no se sirve desde la API, así que toda llamada del navegador a la API es cross-origin y la API la tiene que aceptar explícitamente en desarrollo. Es la clase de fallo que no aparece en ningún gate de compilación: las dos capas compilan, la API contesta, y la pantalla queda vacía.
 
 **El proveedor InMemory no enforcea integridad referencial.** No delegues ninguna regla de negocio a la base de datos: no las aplicaría, y aunque lo hiciera, dejaría la invariante fuera del código que se puede testear.
