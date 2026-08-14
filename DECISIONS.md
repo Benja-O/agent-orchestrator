@@ -929,6 +929,33 @@ Máquina de estados propia en .NET, en `Orchestrator.Application`. Sin framework
 - **Semantic Kernel Process Framework** → descartado: es .NET y sería consistente con ADR-002,
   pero arrastra el modelo de SK entero (kernels, plugins, conectores de servicio) para usar
   una fracción, y su modelo de agentes asume la API directa — lo que choca con ADR-001.
+- **Microsoft Agent Framework 1.0** (GA 2026-04-02) → descartado, y es el descarte que hay que
+  saber defender: es el sucesor unificado de Semantic Kernel y AutoGen, o sea que la viñeta de
+  arriba habla de un producto que ya no existe con ese nombre. Sus *Workflows* son un DAG
+  tipado con executors, aristas condicionales, modelo de ejecución Pregel/BSP y checkpointing
+  — es .NET, está maduro, y la pregunta "¿por qué no esto?" es legítima.
+
+  **Lo que daría gratis:** la mecánica de nodos, estado y trazado —`GraphState` más el
+  bookkeeping de `GraphRunner`, unas 400-550 líneas— y el checkpointing, que pagaría D1.
+
+  **Lo que no daría:** `ReviewPolicy.Decide` (el fingerprint y la detección de no-progreso),
+  `LayerMap.Attribute`, el bucle acotado de `indexing` en `GateEvaluator`, `AgentPrompts` y el
+  merge del veredicto de runtime. Son otras ~450 líneas que se escriben igual, adentro de un
+  executor. **El framework da el envase, no el contenido.**
+
+  **Las tres razones del descarte:** (a) choca con ADR-001 — el camino natural de MAF es
+  `ChatClientAgent` sobre un `IChatClient`, o sea API con key; sostener `claude -p` obliga a
+  derivar de `AIAgent` y envolver el subproceso a mano, que es *más* código nuevo del que se
+  borraría. (b) `claude -p` no es un chat client: corre su propio loop de herramientas, su
+  `--mcp-config`, sus subagentes, `--allowedTools` y el hook de alcance. Nada de eso vive en el
+  modelo de MAF, así que se seguiría manejando por afuera — sería adoptar un framework de
+  agentes que no orquesta a los agentes de este proyecto. (c) La proporción: la capa LSP más el
+  servidor MCP son 3 887 líneas, **4× el motor de grafo**, y ningún framework de orquestación
+  las toca. El grafo es el 8,9% del código de producción; lo que MAF reemplaza es ~5%.
+
+  **La contrapartida honesta:** el día que este proyecto necesite reanudación de corridas (D1)
+  o paralelismo entre capas (D2), MAF pasa a ser la opción por defecto y esta decisión hay que
+  revisitarla — el checkpointing hecho a mano no vale la pena escribirlo dos veces.
 - **Escribirlo a mano pero como grafo genérico configurable por JSON** → descartado por ahora:
   generalización sin segundo caso de uso. El grafo de este pipeline se puede leer como código
   y eso vale más, en un proyecto que se lee para evaluarlo, que la flexibilidad.
