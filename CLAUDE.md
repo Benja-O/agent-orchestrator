@@ -136,9 +136,14 @@ el orquestador no está haciendo su trabajo y eso es el bug a arreglar.
 dotnet run --project src/Orchestrator.Cli -- --spec specs/gestor-tareas.md --output output/
 ```
 
-**Invoca `claude -p` y gasta cuota.** `--max-attempts 2` mientras se depura; `--no-typescript`
-saca esa capa del gate; `--trace-protocol` vuelca el tráfico LSP. `--help` lista todo. Códigos de
-salida: `0` completó, `1` frenó contra un techo de ADR-003, `2` no arrancó.
+**Invoca `claude -p` y gasta cuota.** `--max-attempts 2` mientras se depura; `--trace-protocol`
+vuelca el tráfico LSP. `--help` lista todo. Códigos de salida: `0` completó, `1` frenó contra un
+techo de ADR-003, `2` no arrancó.
+
+**`--no-typescript` le vacía el gate a la capa de frontend, no la saca del pipeline.** Apaga
+`typescript-language-server` en el servidor MCP; el agente de frontend corre igual y paga su turno,
+pero nadie produce diagnostics para `src/Frontend` y su gate pasa por definición. No ahorra cuota y
+desactiva una verificación en silencio.
 
 ```
 dotnet build src/Orchestrator.slnx

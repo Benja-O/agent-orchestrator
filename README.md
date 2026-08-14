@@ -65,10 +65,12 @@ la realidad.
 
 ## 1. La arquitectura del grafo
 
-**Máquina de estados escrita a mano, no LangGraph ni un framework de grafos** ([ADR-003](DECISIONS.md)).
+**Máquina de estados escrita a mano, no LangGraph ni Microsoft Agent Framework** ([ADR-003](DECISIONS.md)).
 La razón: la máquina de estados *es* lo que se evalúa acá, y delegarla a una librería habría dejado el
 proyecto sin su parte interesante. La contrapartida honesta —el grafo es código, no configuración— está
-registrada como deuda D3.
+registrada como deuda D3. Y la proporción, que es el argumento menos opinable: **el motor de grafo son
+~920 líneas, el 8,9% del código de producción; la capa LSP son 3 887, casi el 40%.** Un framework de
+orquestación reemplaza la mitad del 9% y no toca el 40%.
 
 ```mermaid
 flowchart TD
@@ -290,9 +292,16 @@ cuota:** ~18 minutos y 4 turnos de agente si todo sale a la primera.
 dotnet run --project src/Orchestrator.Cli -- --spec specs/gestor-tareas.md --output output/
 ```
 
-`--max-attempts 2` mientras se depura (cada intento extra es un turno pago por capa); `--no-typescript`
-saca esa capa del gate; `--trace-protocol` vuelca el tráfico LSP. Códigos de salida: `0` completó, `1`
-frenó contra un techo, `2` no arrancó.
+`--max-attempts 2` mientras se depura (cada intento extra es un turno pago por capa);
+`--trace-protocol` vuelca el tráfico LSP. Códigos de salida: `0` completó, `1` frenó contra un techo,
+`2` no arrancó.
+
+**`--no-typescript` no saca la capa de frontend del pipeline: le vacía el gate.** El flag apaga
+`typescript-language-server` en el servidor MCP, nada más. `LayerCatalog.InPipelineOrder` sigue siendo
+`[Domain, Api, Frontend]`, así que el agente de frontend **corre igual y paga su turno**; lo que cambia
+es que nadie produce diagnostics para `src/Frontend`, y su gate pasa por definición. O sea: no ahorra
+cuota, y desactiva una verificación sin que nada lo anuncie. Es el mismo falso verde que el proyecto
+existe para atrapar, esta vez pedido a mano.
 
 **La aplicación generada, en el navegador.** Son **dos procesos y dos orígenes**: la API no sirve el
 frontend. **No gasta cuota.**
