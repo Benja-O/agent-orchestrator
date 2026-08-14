@@ -42,6 +42,16 @@
 >    tareas. Compiló y pasó el gate de compilación. El techo de iteraciones de ADR-003 hizo su trabajo
 >    —cortó—, pero lo que hay que mirar es qué escribe un agente acorralado: `templates/agents/api.md`
 >    tiene ahora una sección que le prohíbe explícitamente esa clase de escalada.
+>
+> **Post-cierre, 2026-08-14 — D19 tenía una segunda instancia, en el párrafo escrito para evitarla.**
+> Auditando `templates/generated-app-CLAUDE.md` apareció que el párrafo que le prohíbe a la API fijar
+> su dirección **cerraba afirmando que "el puerto sale del perfil de arranque, que ya está en el
+> esqueleto"**. `templates/scaffold/` no contiene ningún `launchSettings.json`: la oración era falsa, y
+> era exactamente la forma que D19 acababa de diagnosticar —un dato contingente del entorno, en
+> indicativo, dentro de una plantilla que el agente lee como especificación—, escrita a dos renglones
+> de la regla que la prohíbe. Se borró. Lo general, que es lo incómodo: **enunciar la regla no la
+> aplica.** El mismo párrafo que definió el anti-patrón lo contenía, y ningún test podía verlo, porque
+> el único que toca ese archivo comprueba que existe, no qué dice.
 
 **El pipeline produce la aplicación pedida, de punta a punta y sin intervención.** Un spec SDD
 entra por `Orchestrator.Cli`, y salen tres capas que compilan, una app que arranca y una regla de
@@ -228,6 +238,7 @@ retomar si el proyecto continuara.
 | D19 | El diagnóstico de arranque del gate de runtime no distingue "no bindeó" de "bindeó en otra dirección": el agente recibe *"nunca contestó"* en los dos casos | 2026-08-13, ver nota de estado | Hoy lo tapa una prohibición en el prompt (`api.md`, regla 8). El arreglo real es del lado del verificador: comparar la dirección que el proceso reporta con la que se le pasó, y decirlo. **Un diagnóstico que no nombra su causa hace que el agente invente una** |
 | D17 | **El gate de runtime es solo de la API: no existe nodo `frontend-runtime`.** La capa de frontend sigue verificada únicamente por compilación | 2026-08-13, al cobrar D18 | Es lo que queda de D18 después de arreglarla. Un `npm run build` como nodo del grafo atraparía el error de bundling; que la UI *pinte* algo requiere un navegador headless, que es otra clase de dependencia y por eso no se abrió |
 | ~~D18~~ | ~~El frontend generado compilaba pero no se podía abrir en un navegador: el esqueleto no incluía con qué levantarlo~~ | 2026-08-13, al preparar la demo | ✅ **Cobrada el 2026-08-13.** El scaffold no traía bundler: `package.json` tenía un solo script, `tsc --noEmit`. Las tres capas pasaban su gate y **el producto no se podía mostrar**. Dos arreglos, no uno: Vite en `templates/scaffold/src/Frontend/` (con `vite.config.ts`, que es aparato y no producto — ADR-016), y una regla nueva en `templates/agents/api.md` que obliga a habilitar CORS en `Development`, porque el frontend se sirve desde otro origen y sin eso la API contesta 200 y **la pantalla queda vacía**. Lo general, y es la fila 7 del catálogo del README un escalón más arriba: **el gate pregunta lo que se le enseñó a preguntar.** Durante cinco bloques a la capa de frontend solo se le preguntó si compilaba, y compilaba |
+| D20 | **La prohibición de fijar una dirección se le impone a la API y no al frontend, y el pipeline funciona por coincidencia.** `templates/generated-app-CLAUDE.md` obliga a la API a recibir su dirección del orquestador (`app.Run()` pelado), pero ni esa plantilla ni `templates/agents/frontend.md` le dicen al agente de frontend cómo alcanzar una API cuya dirección elige el orquestador. El agente hace lo único que puede: la inventa — `const API_BASE_URL = "http://localhost:5000/api/tareas"` en el `App.tsx` generado | 2026-08-14, auditando la plantilla tras D19 | **Anda porque sin `launchSettings.json` el default de Kestrel es 5000, no porque nadie lo haya decidido.** El día que la API arranque en otro puerto, el frontend queda apuntando a la nada — y no hay gate que lo note, porque no existe `frontend-runtime` (D17). El arreglo es un proxy de Vite hacia un origen único, o la dirección por variable de entorno del build; las dos son cambios de `templates/scaffold/`, o sea aparato de medición y no producto (ADR-016) |
 | D15 | La plomería que el orquestador inyecta en el workspace es indistinguible del código de la app para un language server | Bloque 5, ADR-016 | ✅ **Cerrada en el mismo bloque, y vale registrarla porque casi mata la primera corrida.** `.claude/hooks/restrict-to-layer.js` es un `.js` real que `typescript-language-server` reclama como suyo y que **no pertenece a ninguna capa** — un solo diagnostic ahí llega a `LayerMap.Attribute`, no encuentra agente a quien devolvérselo y termina la corrida. `.claude` se sumó a los directorios que el servidor nunca enumera, con test de regresión. Lo general: cualquier archivo que el orquestador deposite en el workspace y que un servidor de lenguaje reclame es una corrida muerta esperando |
 
 ---
