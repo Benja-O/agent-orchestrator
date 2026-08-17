@@ -1,6 +1,6 @@
 # Evidencia de corridas
 
-Tres logs JSONL de corridas reales, versionados a propósito.
+Cuatro logs JSONL de corridas reales, versionados a propósito.
 
 **Por qué existen.** `logs/` está gitignoreado y una corrida completa gasta cuota del plan Pro
 (ADR-001), así que sin esto la única forma de ver el pipeline funcionando sería correrlo. *"Corré el
@@ -30,6 +30,28 @@ Qué mirar:
 - **Línea 17** — `application-verified` con `routesExercised: 2`. Ese contador va **junto** a los
   diagnostics y no al lado, porque "sin fallos" significa una cosa con rutas ejercitadas y otra con
   cero (ADR-017).
+
+## `run-20260817-165902.jsonl` — el gate de runtime atrapando el bug que lo hizo nacer
+
+**21 min 41 s, una iteración de revisión.** La contracara exacta de `run-20260811-132014.jsonl`: el
+mismo tipo de fallo, y esta vez el pipeline lo devuelve en lugar de entregarlo.
+
+| Línea | Qué pasa |
+|---|---|
+| 15 | `api-gate` **limpio**. El C# compila: Roslyn no tiene nada que decir |
+| 17 | `application-verified` · `routesExercised: 0, errorCount: 1`. La app **no arranca**: EF Core no puede construir la entidad — *"No suitable constructor was found for the type `Tarea`… Cannot bind `dependencias`"* |
+| 18 | `review-iteration` · `resolved: 0, introduced: 1` → `sendBackToAgent` |
+| 20 | El agente de API vuelve a correr con `diagnosticsHandedOver: 1` |
+| 25 | `application-verified` · `routesExercised: 1`. **Corregido en el intento siguiente** |
+
+Es la misma familia que el 500 del 11/08 —EF Core atragantándose con la colección de value objects de
+una tarea— separada por seis días y por el nodo que ese 500 obligó a construir. Comparar las dos
+líneas 17 de los dos archivos es la forma más corta de mostrar qué agregó ADR-017.
+
+**El detalle que no hay que pasar por alto es `routesExercised: 0`.** No hubo ningún endpoint que
+fallara: no hubo endpoints. Un verificador que reportara éxito por no haber encontrado nada que probar
+sería un falso verde producido por el mecanismo instalado para evitarlos, y se vería idéntico al éxito
+real. Por eso ese contador viaja junto a los diagnostics y no al lado.
 
 ## `run-20260811-132014.jsonl` — la corrida que compiló y no funcionaba
 
