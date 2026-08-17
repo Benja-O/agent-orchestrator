@@ -307,14 +307,29 @@ existe para atrapar, esta vez pedido a mano.
 frontend. **No gasta cuota.**
 
 ```bash
-dotnet run --project output/src/Api                    # http://localhost:5000
-cd output/src/Frontend && npm run dev                  # http://localhost:5173  (otra terminal)
+ASPNETCORE_ENVIRONMENT=Development dotnet run --project output/src/Api   # http://localhost:5000
+cd output/src/Frontend && npm run dev                                   # http://localhost:5173  (otra terminal)
 ```
 
-Que hagan falta los dos es la razón por la que el prompt del agente de API le exige habilitar CORS en
-`Development`: para el navegador, cada llamada del frontend a la API es cross-origin. Sin esa política
-la API contesta `200` a todo y **la pantalla queda vacía** — un fallo que ningún gate de compilación
-puede ver, de la misma familia que los de [§4](#4-el-catálogo-de-fallos-silenciosos).
+En **PowerShell** (`&&` no existe en 5.1, y la variable de entorno no se antepone al comando):
+
+```powershell
+$env:ASPNETCORE_ENVIRONMENT = "Development"; dotnet run --project output/src/Api
+cd output/src/Frontend; npm run dev
+```
+
+`ASPNETCORE_ENVIRONMENT=Development` no es opcional: la API solo habilita CORS bajo
+`app.Environment.IsDevelopment()` (regla 7 de `templates/agents/api.md`), y sin `launchSettings.json`
+—prohibido a propósito, porque un perfil de arranque fijaría la dirección y le ganaría al orquestador
+(regla 9)— el entorno por defecto de .NET es `Production`. Arrancarla pelada dejaría CORS apagado
+sin ningún aviso: la API sigue contestando `200` a todo, y **la pantalla queda vacía** — el mismo
+síntoma que si CORS nunca se hubiera implementado, un fallo que ningún gate de compilación puede ver,
+de la misma familia que los de [§4](#4-el-catálogo-de-fallos-silenciosos).
+
+Que la API quede en `:5000` es el default de Kestrel, no una dirección elegida — y el frontend generado
+la tiene hardcodeada en `App.tsx` porque hoy no tiene otra forma de encontrarla (D20 en `ROADMAP.md`).
+Si el puerto 5000 estuviera ocupado por otro proceso, la API arrancaría en otro puerto igual de
+silenciosamente y el frontend quedaría apuntando a la nada.
 
 **La verificación de que la app hace lo que el spec pedía** — la parte que el gate **no puede** contestar,
 porque verifica compilación y no corrección. Levanta la app generada y comprueba **por HTTP** que CA-06 y
