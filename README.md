@@ -396,11 +396,17 @@ prohíbe es `claude -p` y los language servers reales; `node` no es ninguno de l
 
 ## 7. El output
 
-La aplicación generada vive en **su propio repositorio, `gestor-tareas-generado`**, presentada
+La aplicación generada vive en **su propio repositorio,
+[Benja-O/agent-orchestrator-output](https://github.com/Benja-O/agent-orchestrator-output)**, presentada
 explícitamente como *output del orquestador y no trabajo manual* ([ADR-008](DECISIONS.md)) — su README es
 el único archivo escrito a mano de ese repo, y lo dice en la primera línea. Dos repos y no uno, porque meterlas juntas
 vuelve ambiguo qué escribió una persona y qué escribió un agente — que es precisamente la pregunta que un
 evaluador se hace.
+
+Ese repo **incluye la plomería que el orquestador inyecta en el workspace** —`.claude/agents/`, el hook de
+alcance, `.mcp.json`— y no solo el código de la app, con una tabla que dice de dónde salió cada ruta. Así la
+distinción entre lo escrito por un agente, lo escrito por el orquestador y lo escrito por una persona se puede
+comprobar archivo por archivo en vez de tener que creerla.
 
 En este repo, `output/` está gitignoreado y **es desechable por construcción**: se borra y se regenera de
 cero en cada corrida. Si alguna vez hiciera falta editar algo ahí a mano para que el pipeline avance, eso
