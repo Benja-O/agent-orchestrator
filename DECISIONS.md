@@ -30,6 +30,7 @@
 
 | ADR | Título corto | Área | Estado |
 |---|---|---|---|
+| ADR-019 | Crear tareas y declarar dependencias se suman a los criterios de la interfaz | Spec / Alcance | Aceptada |
 | ADR-018 | La entrega: repo público, y la evidencia viaja con él | Entrega / Repositorio | Aceptada |
 | ADR-017 | Gate de runtime: un nodo que pregunta si la app funciona, no si compila | Grafo / Gate | Aceptada |
 | ADR-016 | El esqueleto del proyecto generado lo escribe el orquestador, no un agente | Workspace / Gate | Aceptada |
@@ -50,6 +51,31 @@
 | ADR-001 | Claude Code CLI headless (`claude -p`), no la API de Anthropic | Agentes / Costo | Aceptada |
 
 ---
+
+## ADR-019 — Crear tareas y declarar dependencias se suman a los criterios de la interfaz
+**Fecha:** 2026-08-17
+**Estado:** Aceptada
+**ADRs relacionados:** ADR-009 (el alcance del artefacto de juguete), ADR-012 (formato del spec, identificadores correlativos), ADR-011 (scope del subagente de frontend).
+
+### Contexto
+Preparando la demo para una entrevista se abrió `output/` de una corrida ya cerrada (11/08) y la interfaz no tenía forma de crear una tarea ni de declarar una dependencia — solo listaba y permitía completar. No era una corrida mala: **CA-01 a CA-04 (crear, listar, rechazar título vacío, declarar/quitar dependencia) tienen `—` en la columna Verifica**, es decir, siempre fueron criterios de API, nunca de interfaz. Los únicos tres criterios de frontend del spec —CA-11, CA-12, CA-13— cubren listar, mostrar el bloqueo y manejar el error al intentar igual. El agente de frontend hizo exactamente lo que el spec pedía; el spec nunca pidió un formulario.
+
+La forma prevista de ejercitar la creación de tareas era la API, y así lo hace `Orchestrator.GeneratedAppVerification`. Para una demo frente a un evaluador sin conocimiento previo del sistema, sembrar datos por `curl` antes de abrir el navegador es honesto pero se lee como un truco de bastidores, y además es efímero: `output/` se regenera de cero en cada corrida (ADR-008), así que cualquier dato sembrado a mano no sobrevive a la próxima.
+
+### Decisión
+**Se agregan dos criterios de aceptación al spec — CA-14 (formulario de creación) y CA-15 (declarar una dependencia desde la interfaz)** — y una regla nueva al template del agente de frontend (`templates/agents/frontend.md`) que las nombra explícitamente, con la forma del `POST` de creación y del `POST` de dependencias que la API ya expone. Ninguno de los dos cita una `RN-nn`: son funcionalidad básica de interfaz, igual que CA-11, no verificación de una regla de negocio.
+
+**Esto no es la excepción a R2 que parece ser.** R2 prohíbe ampliar el *artefacto* — nuevas entidades, reglas, pantallas que no estaban en el spec original. Acá no se agrega ninguna regla de negocio nueva ni ninguna entidad: se cierra un hueco entre lo que la API ya hacía (CA-01, CA-04) y lo que la interfaz podía mostrar de eso. El artefacto no crece; deja de tener una asimetría entre sus dos mitades.
+
+### Alternativas
+- **Aceptar el alcance actual y sembrar por `curl` para la demo** → descartado como decisión permanente, aunque es lo que se usó mientras este ADR se escribía. Funciona una vez y no dice nada sobre si el sistema podría haberlo hecho bien solo; además es evidencia que no sobrevive a una corrida nueva, que es precisamente lo que este proyecto decidió no aceptar en ningún otro lado (ADR-018).
+- **Corregir el template sin tocar el spec** → descartado. El template sin una CA que lo respalde es una instrucción sin criterio de verificación: el gate de LSP comprobaría que compila, no que el formulario existe. La disciplina del proyecto es que un criterio nuevo se declara en el spec antes de pedírselo al agente, no al revés.
+- **No hacer nada y explicarlo como limitación conocida en la entrevista** → válido y ya estaba documentado como parte de D17. Se descarta acá porque el costo de cerrarlo es bajo — un criterio de funcionalidad básica, sin regla de negocio nueva — y el valor de mostrar la interfaz completa en una entrevista sin experiencia previa lo justifica.
+
+### Consecuencias
+- `SpecParserTests.The_repositorys_spec_declares_the_identifiers_the_pipeline_expects` pasa de esperar 13 criterios terminando en CA-13 a esperar 15 terminando en CA-15.
+- Requiere una corrida nueva del pipeline completo para que el frontend generado refleje los criterios nuevos — gasta cuota (ADR-001), sin garantía de que el agente los resuelva bien a la primera. Si no sale bien, el plan de respaldo es la demo por `curl` que este ADR describe como no permanente.
+- El README y la guía de estudio de la entrevista quedan desactualizados en la cantidad de criterios de frontend (tres, no cinco) hasta que se revisen.
 
 ## ADR-018 — La entrega: repo público, y la evidencia viaja con él
 **Fecha:** 2026-08-12

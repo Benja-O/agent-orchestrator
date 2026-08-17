@@ -61,4 +61,9 @@ Analicé el spec. El plan queda así.
 - Verifica: CA-13
 - Depende de: T-07
 
+### T-12 — Formulario para crear una tarea y control para declarar una dependencia
+- Implementa: —
+- Verifica: CA-14, CA-15
+- Depende de: T-05, T-06
+
 Todos los criterios del spec quedan cubiertos.

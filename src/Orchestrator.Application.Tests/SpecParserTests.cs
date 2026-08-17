@@ -14,8 +14,8 @@ public sealed class SpecParserTests
         var spec = Fixture.RealSpec;
 
         Assert.Equal(["RN-01", "RN-02", "RN-03"], spec.BusinessRules);
-        Assert.Equal(13, spec.AcceptanceCriteria.Count);
-        Assert.Equal("CA-13", spec.AcceptanceCriteria[^1]);
+        Assert.Equal(15, spec.AcceptanceCriteria.Count);
+        Assert.Equal("CA-15", spec.AcceptanceCriteria[^1]);
     }
 
     [Fact]

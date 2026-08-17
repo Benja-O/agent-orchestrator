@@ -89,6 +89,8 @@ Cada criterio describe un comportamiento observable desde fuera del sistema. La 
 | **CA-11** | La interfaz lista las tareas con un control para marcarlas como completadas. | — |
 | **CA-12** | En la interfaz, el control de una tarea bloqueada por RN-01 aparece deshabilitado, y el motivo del bloqueo es visible para el usuario sin necesidad de intentarlo. | RN-01 |
 | **CA-13** | Si aun así se intenta completar una tarea bloqueada, la interfaz muestra el error sin dejar la lista en un estado inconsistente. | RN-01 |
+| **CA-14** | La interfaz tiene un formulario para crear una tarea, con título y fecha límite opcional, y la tarea creada aparece en la lista sin recargar la página. | — |
+| **CA-15** | La interfaz permite declarar que una tarea depende de otra existente. | — |
 
 **CA-06 es el criterio central de todo el proyecto.** Es el que distingue "el pipeline generó código que compila" de "el pipeline generó la aplicación pedida": la compilación la verifica el gate de LSP, la regla de negocio solo la verifica este criterio.
 

@@ -53,6 +53,18 @@
 > aplica.** El mismo párrafo que definió el anti-patrón lo contenía, y ningún test podía verlo, porque
 > el único que toca ese archivo comprueba que existe, no qué dice.
 
+> **Post-cierre, 2026-08-17 — un hallazgo de la preparación de entrevista, no de una corrida.**
+> Levantando `output/` de la corrida del 11/08 para ensayar la demo apareció que la interfaz no
+> tenía forma de crear una tarea ni de declarar una dependencia: solo listaba y completaba. No era
+> un defecto del agente de frontend —hizo exactamente lo que el spec pedía—, sino una asimetría del
+> spec mismo: CA-01 y CA-04 (crear, declarar dependencia) siempre fueron criterios de **API**, con
+> `—` en Verifica, y los tres únicos criterios de frontend (CA-11..13) nunca pidieron un
+> formulario. **ADR-019** cierra el hueco: dos criterios nuevos (CA-14, CA-15) y una regla nueva en
+> `templates/agents/frontend.md`, sin agregar ninguna regla de negocio ni entidad — R2 sigue
+> intacto, lo que cambió es que la interfaz ahora expone lo que la API ya podía hacer. Pendiente:
+> correr el pipeline completo con el spec y el template nuevos y verificar que el frontend
+> resultante cumple CA-14 y CA-15.
+
 **El pipeline produce la aplicación pedida, de punta a punta y sin intervención.** Un spec SDD
 entra por `Orchestrator.Cli`, y salen tres capas que compilan, una app que arranca y una regla de
 negocio que se sostiene desde afuera. Las tres partes del criterio de salida están verificadas con

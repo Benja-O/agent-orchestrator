@@ -14,10 +14,10 @@ public sealed class PlanParserTests
     {
         var plan = Parse("valid-plan.md");
 
-        Assert.Equal(11, plan.Tasks.Count);
+        Assert.Equal(12, plan.Tasks.Count);
         Assert.Equal(4, plan.TasksFor(Layer.Domain).Count);
         Assert.Equal(4, plan.TasksFor(Layer.Api).Count);
-        Assert.Equal(3, plan.TasksFor(Layer.Frontend).Count);
+        Assert.Equal(4, plan.TasksFor(Layer.Frontend).Count);
     }
 
     [Fact]
@@ -54,7 +54,7 @@ public sealed class PlanParserTests
     {
         var plan = Parse("wrapped-in-fences.md");
 
-        Assert.Equal(11, plan.CriteriaNotCovered(Fixture.RealSpec).Count);
+        Assert.Equal(13, plan.CriteriaNotCovered(Fixture.RealSpec).Count);
         Assert.DoesNotContain("CA-05", plan.CriteriaNotCovered(Fixture.RealSpec));
     }
 

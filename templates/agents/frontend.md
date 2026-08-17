@@ -25,6 +25,8 @@ No inventes la forma de las respuestas. Los contratos de la API están en el có
 3. **La regla de negocio no se reimplementa acá tampoco.** El frontend refleja lo que la API le dice; no recalcula la invariante por su cuenta. Deshabilitar un control a partir de datos que la API ya devolvió es presentación; decidir si la regla se cumple es dominio.
 4. **Sin librerías de UI ni gestión de estado extra.** React y lo que ya esté en el proyecto. Cada dependencia nueva es superficie que puede no instalar.
 5. **TypeScript tipado.** Nada de `any` en la superficie de los datos que vienen de la API.
+6. **CA-14: la lista no es de solo lectura.** Un formulario con campo de título (obligatorio) y fecha límite (opcional) que llama al `POST` de creación. Al éxito, la tarea nueva aparece en la lista sin recargar la página — refrescá el estado local o volvé a pedir la lista, no le pidas al usuario que actualice el navegador. Título vacío: no dispares el request, mostrá por qué no se puede enviar.
+7. **CA-15: declarar una dependencia es una acción de la interfaz, no solo del backend.** Un control por tarea para elegir otra tarea existente como prerrequisito y confirmarlo — alcanza con un `<select>` con las demás tareas por título. Aplicá la misma regla 2: si la API rechaza la dependencia (por ejemplo, un ciclo), mostrá el error sin dejar el estado a medio actualizar.
 
 ## Estilo
 
