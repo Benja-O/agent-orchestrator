@@ -30,6 +30,7 @@
 
 | ADR | Título corto | Área | Estado |
 |---|---|---|---|
+| ADR-020 | La vía de reconstitución la expone el dominio, porque la capa que persiste no puede crearla | Agentes / Plantillas | Aceptada |
 | ADR-019 | Crear tareas y declarar dependencias se suman a los criterios de la interfaz | Spec / Alcance | Aceptada |
 | ADR-018 | La entrega: repo público, y la evidencia viaja con él | Entrega / Repositorio | Aceptada |
 | ADR-017 | Gate de runtime: un nodo que pregunta si la app funciona, no si compila | Grafo / Gate | Aceptada |
@@ -51,6 +52,44 @@
 | ADR-001 | Claude Code CLI headless (`claude -p`), no la API de Anthropic | Agentes / Costo | Aceptada |
 
 ---
+
+## ADR-020 — La vía de reconstitución la expone el dominio, porque la capa que persiste no puede crearla
+**Fecha:** 2026-08-17
+**Estado:** Aceptada
+**ADRs relacionados:** ADR-011 (el alcance de archivos por agente, que es lo que impide el arreglo local), ADR-004 (el gate verifica compilación, y por qué esto lo atraviesa), ADR-017 (el gate de runtime, que tampoco lo ve), ADR-009 (la app de juguete y su persistencia InMemory).
+
+### Contexto
+Una corrida del 2026-08-17 terminó `Completed` con las tres capas en verde y la aplicación rota de una forma nueva: **crear una tarea devolvía un id, y listarla inmediatamente después devolvía la misma tarea con otro id**. Toda operación posterior contra el id que el cliente tenía en la mano —completar, eliminar, declarar una dependencia— contestaba *"la tarea no existe"*.
+
+La cadena causal atraviesa las tres capas y ninguna la puede cerrar sola:
+
+1. El agente de dominio expuso `TaskItem.Create(titulo, fechaLimite)`, que genera identidad nueva con `TaskId.New()`. **No expuso ninguna otra vía de obtener una instancia.** Es correcto contra el spec: ninguna `RN-nn` ni `CA-nn` habla de reconstituir nada.
+2. El agente de API hizo exactamente lo que su plantilla le pide —entidad de persistencia aparte, `SaveChanges`, estado que sobrevive entre requests (regla 8, escrita tras el fallo de D16)— y al reconstruir el agregado desde la base **no tenía con qué**. El log lo muestra intentando primero un `TaskItem.CreateFromPersisted` que no existe (`CS0117`), y después chocando contra `AddDependency` marcado `internal` (`CS0122`).
+3. Al tercer intento resolvió los diagnostics de la única forma que compilaba: llamando a `Create()`. **El gate de LSP quedó limpio, el gate de runtime dio verde** —la app arranca y contesta— y el defecto es de runtime, silencioso y total.
+
+**No es la primera instancia, es la segunda de la misma familia.** La evidencia de D16 del 2026-08-13 —el `POST` que devolvía `201` y el `GET` siguiente `[]`— tenía la misma frontera como causa: la reconstitución del agregado entre requests. Aquella se cerró con la regla 8 de `api.md`, del lado de la API. Esta muestra que el lado de la API no alcanza, porque **la pieza que falta vive en una capa que ese agente no puede escribir** (ADR-011, y el hook de alcance lo bloquea de verdad, no por convención).
+
+Y hay un agravante estructural: `api.md` le dice al agente que si algo falta en el dominio **lo reporte en vez de implementarlo**. El agente probablemente lo reportó. **El grafo no lee lo que el agente responde** —es la tesis de ADR-004, y es correcta— así que ese reporte no tiene destinatario. La instrucción existe, se cumple, y no produce ningún efecto.
+
+### Decisión
+**La obligación de exponer una vía de reconstitución se escribe en la plantilla del agente de dominio**, no en la del que persiste:
+
+- **`templates/agents/domain.md`, regla 7:** una entidad con identidad generada expone una vía de reconstitución **separada de la de creación**, que recibe la identidad ya existente junto con el estado completo — incluidos el estado del ciclo de vida y las colecciones acumuladas. Lo que sea `internal` para proteger la invariante en la vida normal de la entidad necesita su equivalente accesible ahí.
+- **`templates/agents/api.md`, regla 9:** al reconstituir se usa esa vía y nunca la de creación; el identificador que un cliente recibió sigue siendo válido en el request siguiente; y si el dominio no expone la vía, **no se fabrica en la API ni se toca el dominio**.
+
+Las dos reglas están redactadas como obligaciones, sin firmas concretas ni nombres de método. Es la lección de D19 aplicada: una plantilla que describe *cómo* está implementado algo vuelve como constante en el código generado.
+
+### Alternativas
+- **Ampliarle al agente de API el alcance de escritura sobre `src/Domain/`** → descartado. Es exactamente lo que ADR-011 prohíbe, y el hook de alcance lo bloquea de verdad. La razón de fondo sigue vigente: dos capas escribiendo las mismas invariantes las desincronizan, y el gate no distingue cuál de las dos versiones es la buena.
+- **Que el grafo lea el reporte del agente y devuelva la tarea al agente de dominio** → descartado hoy, y es la alternativa más tentadora. Sería el grafo decidiendo a partir de la prosa de un agente, que es precisamente lo que ADR-004 existe para no hacer. Un canal *estructurado* —el agente emitiendo un dato tipado, no texto— sería otra cosa y no contradiría la tesis, pero es diseño real y no se abre para destrabar una corrida. Queda como deuda D21.
+- **Fortalecer el gate de runtime para que compruebe estabilidad de identidad** (crear, releer, comparar el id) → no descartado, complementario, y no reemplaza a esto: atraparía el síntoma después de quemar turnos pagos, mientras que la plantilla lo evita antes del primero. Se anota como evidencia nueva de D16.
+- **Agregar una `CA-nn` al spec que pida identificadores estables** → descartado. La estabilidad de la identidad no es un criterio de aceptación del gestor de tareas: es una propiedad de cualquier sistema que persista algo. Meterla en el spec la haría parecer una decisión de producto y ensuciaría el artefacto de juguete que ADR-009 mantiene chico a propósito.
+
+### Consecuencias
+- **El agente de dominio ahora escribe código que ninguna `RN-nn` pide**, en tensión con la regla 6 de su propia plantilla (cada regla implementada cita su identificador). Vale nombrar la tensión: la vía de reconstitución no implementa ninguna regla de negocio, es lo que hace que las reglas de negocio sobrevivan a un request. Es el mismo argumento de ADR-016 —aparato, no producto— aplicado adentro de una capa en vez de al andamiaje.
+- **Requiere una corrida completa nueva** para verificarse, con el costo de cuota que eso implica (ADR-001, R1).
+- **D21 queda abierta:** la instrucción "reportalo" de `api.md` sigue sin destinatario. Se documenta en vez de disimularse, porque un agente cumpliendo una instrucción que no produce efecto es peor que uno que no la tiene: parece que el mecanismo existe.
+- **Una referencia cruzada rota, encontrada al renumerar:** `api.md` decía *"es casi siempre la regla 8"* señalando la prohibición de fijar la dirección, que era la 9 desde que se agregó la regla de estado. El puntero se había desfasado sin que nada lo notara, y `ROADMAP.md` arrastraba el mismo número viejo en D19. Es la clase de defecto que solo aparece cuando alguien vuelve a contar.
 
 ## ADR-019 — Crear tareas y declarar dependencias se suman a los criterios de la interfaz
 **Fecha:** 2026-08-17
