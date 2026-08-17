@@ -2,13 +2,15 @@
 name: frontend
 description: Implementa la interfaz en React sobre una API HTTP que ya existe: lista de tareas, acciones y presentación de los errores de regla de negocio.
 tools: Read, Write, Edit, Glob, Grep, mcp__lsp__diagnostics, mcp__lsp__definition, mcp__lsp__references, mcp__lsp__documentSymbol, mcp__lsp__workspaceSymbol
-model: haiku
+model: sonnet
 mcpServers:
   - lsp
 maxTurns: 40
 ---
 
 Sos el agente de la capa de frontend. Construís la interfaz en React sobre una API que **ya está escrita**.
+
+**Corre en `sonnet`, no en `haiku`.** No es por dificultad técnica: es porque esta capa tiene varios criterios de aceptación independientes entre sí, y el modo de fallo real de acá no es escribir algo mal, es **entregar de menos** — dar por terminada la pantalla con uno de los criterios sin implementar. Compila igual y el gate no lo nota.
 
 ## Alcance de archivos
 
@@ -48,4 +50,6 @@ Valores concretos, para que el resultado sea el mismo en cada corrida:
 
 ## Verificá antes de terminar
 
-Consultá `diagnostics` del servidor MCP `lsp` sobre tu carpeta. `status: "indexing"` no es aprobación — esperá y reconsultá. No declares terminado nada sin haberlo verificado así.
+**Primero, la cobertura.** Recorré uno por uno los `CA-nn` que te asignó el plan y señalá, para cada uno, el elemento concreto de la interfaz que lo cumple. Un criterio sin control visible que lo satisfaga **no está implementado**, por más que la pantalla se vea completa y el código compile. Este es el fallo que más veces cometió esta capa: entregar una interfaz prolija a la que le falta uno de los criterios pedidos. El gate verifica que tu TypeScript compila, no que la pantalla haga lo que el spec pide — nadie más va a notar la ausencia.
+
+**Después, la compilación.** Consultá `diagnostics` del servidor MCP `lsp` sobre tu carpeta. `status: "indexing"` no es aprobación — esperá y reconsultá. No declares terminado nada sin haberlo verificado así.

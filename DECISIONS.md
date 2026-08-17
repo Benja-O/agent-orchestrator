@@ -544,6 +544,32 @@ vigente tal cual.
 tiene tests que lo corren de verdad —rutas dentro de la capa, rutas de otra capa, rutas absolutas,
 `..`, y entrada ilegible, que se rechaza en vez de dejarse pasar—.
 
+### Corrección del 2026-08-17 — el frontend pasa a `sonnet`
+
+La tabla asignaba `haiku` al frontend con el argumento de que es "trabajo mecánico sobre un dominio
+ya definido". Era cierto cuando la capa tenía tres criterios: listar, deshabilitar, mostrar el error.
+**ADR-019 le sumó dos** (el formulario de creación y el control de dependencias) y la asignación de
+modelo no se revisó — que es el error, no la elección original.
+
+Dos corridas consecutivas mostraron el problema, y **no es el que el argumento de costo anticipaba**:
+el agente no escribió nada mal, entregó de menos. Una implementó los cinco criterios; la siguiente
+terminó normal, en 5,4 minutos y sin agotar sus 40 turnos, con CA-15 sencillamente ausente — sin un
+`<select>`, sin nada. El plan la tenía asignada (`criteriaNotCovered: []`) y la regla estaba escrita
+en la plantilla. **Compiló, y el gate de frontend la aprobó**, porque verifica TypeScript y no
+cobertura de criterios.
+
+De ahí, dos cambios y una lección:
+
+- `templates/agents/frontend.md` corre en `sonnet`, con la razón escrita adentro del propio archivo.
+- Su sección de verificación ahora pide **recorrer los `CA-nn` asignados uno por uno y señalar el
+  control que cumple cada uno** antes de consultar `diagnostics`. La cobertura se verifica primero;
+  la compilación después.
+- **La palanca de modelo hay que releerla cuando cambia el alcance de una capa.** `model` se eligió
+  como palanca de costo (R1) y resultó ser también una palanca de *completitud*: el modo de fallo de
+  un modelo más chico en esta capa no fue equivocarse, fue omitir. Un agente que entrega de menos y
+  compila es indistinguible de uno que terminó bien — otra vez la forma que tienen todos los fallos
+  de este proyecto.
+
 ## ADR-010 — Contrato del servidor MCP de LSP: tools, transporte HTTP y formato de `Diagnostic`
 **Fecha:** 2026-08-07 · **Verificado y promovido a Aceptada:** 2026-08-09 (Bloque 2)
 **Estado:** Aceptada
